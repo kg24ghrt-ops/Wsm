@@ -1,0 +1,6 @@
+<?xml version="1.0" encoding="utf-8"?>
+<resources>
+    <string name="app_name">Personal Custom IDE</string>
+    <string name="app_name_short">PersonalCustomIDE</string>
+    <string name="content_description_app_icon">Application icon</string>
+</resources>
