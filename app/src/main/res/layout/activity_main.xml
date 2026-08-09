@@ -63,22 +63,32 @@
             <Button
                 android:id="@+id/btnGitStatus"
                 style="@style/Widget.AppCompat.Button.Borderless"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:text="Status" />
             <Button
                 android:id="@+id/btnGitCommit"
                 style="@style/Widget.AppCompat.Button.Borderless"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:text="Commit" />
             <Button
                 android:id="@+id/btnGitPush"
                 style="@style/Widget.AppCompat.Button.Borderless"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:text="Push" />
             <Button
                 android:id="@+id/btnCloneRepo"
                 style="@style/Widget.AppCompat.Button.Borderless"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:text="Clone" />
             <Button
                 android:id="@+id/btnCreatePython"
                 style="@style/Widget.AppCompat.Button.Borderless"
+                android:layout_width="wrap_content"
+                android:layout_height="wrap_content"
                 android:text="+Python" />
         </LinearLayout>
     </LinearLayout>
