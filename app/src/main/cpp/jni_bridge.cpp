@@ -40,10 +40,9 @@ Java_com_example_personalcustomide_EditorNative_saveFile(JNIEnv* env, jobject th
     return ok;
 }
 
-// Returns a Java ArrayList of TokenInfo objects
-extern "C" JNIEXPORT jobject JNICALL
+// Returns a String "type,length;type,length;..."
+extern "C" JNIEXPORT jstring JNICALL
 Java_com_example_personalcustomide_EditorNative_getLineTokens(JNIEnv* env, jobject thiz, jint line) {
-    // Get the full text and split lines
     std::string full = buffer.getText();
     std::vector<std::string> lines;
     size_t start = 0, end;
@@ -52,13 +51,12 @@ Java_com_example_personalcustomide_EditorNative_getLineTokens(JNIEnv* env, jobje
         start = end + 1;
     }
     if (start < full.size()) lines.push_back(full.substr(start));
-    if (line < 0 || line >= (int)lines.size()) return nullptr;
 
-    // Tokenize the line
+    if (line < 0 || line >= (int)lines.size()) {
+        return env->NewStringUTF("");
+    }
+
     auto tokens = Lexer::tokenize(lines[line]);
-
-    // Create Java ArrayList of TokenInfo (we'll use a simple encoded string for simplicity)
-    // Actually let's return a String "type,length;type,length;..."
     std::string result;
     for (auto& token : tokens) {
         if (!result.empty()) result += ";";

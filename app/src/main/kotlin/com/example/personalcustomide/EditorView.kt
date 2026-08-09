@@ -84,7 +84,7 @@ class EditorView @JvmOverloads constructor(
     private fun updateText() {
         native?.let {
             val fullText = it.getText()
-            // Fix: Use split('\n') to avoid overload ambiguity
+            // Use Char delimiter to avoid overload ambiguity
             textLines = fullText.split('\n', keepEmpty = true)
             tokenCache.clear()
             invalidate()
@@ -195,13 +195,11 @@ class EditorView @JvmOverloads constructor(
         outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI
         outAttrs.inputType = EditorInfo.TYPE_CLASS_TEXT or EditorInfo.TYPE_TEXT_FLAG_MULTI_LINE
 
-        // Fix: Properly implement BaseInputConnection with setComposingText
         return object : BaseInputConnection(this, true) {
             private var composingText = ""
 
             override fun setComposingText(text: CharSequence?, newCursorPosition: Int): Boolean {
                 if (text != null) {
-                    // Remove previous composing text if any
                     if (composingText.isNotEmpty()) {
                         native?.deleteText(cursorPos - composingText.length, composingText.length)
                         cursorPos -= composingText.length

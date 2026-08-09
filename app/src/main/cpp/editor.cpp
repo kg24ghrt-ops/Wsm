@@ -21,10 +21,8 @@ struct EditorBuffer::Impl {
         size_t currentGap = gapEnd - gapStart;
         if (currentGap >= needed) return;
         size_t newGap = std::max(needed, currentGap * 2 + 1024);
-        // Move gap to end
         size_t oldSize = buffer.size();
         buffer.resize(oldSize + newGap - currentGap);
-        // Shift data after gap to the right
         std::copy(buffer.begin() + gapEnd, buffer.begin() + oldSize,
                   buffer.begin() + gapEnd + (newGap - currentGap));
         gapEnd = gapStart + newGap;
@@ -32,7 +30,6 @@ struct EditorBuffer::Impl {
 
     void insert(size_t pos, const std::string& text) {
         if (pos > gapStart) {
-            // Move gap to pos
             size_t moveSize = pos - gapStart;
             std::copy(buffer.begin() + gapEnd, buffer.begin() + gapEnd + moveSize,
                       buffer.begin() + gapStart);
@@ -51,12 +48,7 @@ struct EditorBuffer::Impl {
     }
 
     void erase(size_t pos, size_t len) {
-        // Move gap to pos
-        insert(pos, ""); // This moves the gap
-        // Now gapStart == pos
-        size_t eraseLen = std::min(len, gapStart - pos); // shouldn't be less
-        // Actually we need to move gap to pos+len
-        // Simpler: rebuild full string
+        // Simplified: rebuild full string
         std::string full = getFull();
         full.erase(pos, len);
         buffer = full;
@@ -84,7 +76,7 @@ bool EditorBuffer::loadFile(const std::string& path) {
     std::string content = ss.str();
     pImpl->buffer = content;
     pImpl->gapStart = content.size();
-    pImpl->gapEnd = content.size(); // no gap
+    pImpl->gapEnd = content.size();
     return true;
 }
 

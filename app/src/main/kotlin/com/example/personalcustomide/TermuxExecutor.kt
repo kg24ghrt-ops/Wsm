@@ -17,25 +17,25 @@ object TermuxExecutor {
     private const val ACTION_RESULT = "com.example.personalcustomide.TERMUX_RESULT"
     private const val EXTRA_COMMAND_ID = "command_id"
 
-    // Termux constants (hardcoded for reliability, but you can import TermuxConstants)
+    // Termux constants
     private const val TERMUX_PACKAGE = "com.termux"
     private const val RUN_COMMAND_SERVICE = "com.termux.app.RunCommandService"
     private const val ACTION_RUN_COMMAND = "com.termux.RUN_COMMAND"
 
-    // Intent extras - using the official keys from the documentation[reference:5][reference:6]
+    // Intent extras - using the official keys
     private const val EXTRA_COMMAND_PATH = "com.termux.RUN_COMMAND_PATH"           // String
     private const val EXTRA_ARGUMENTS = "com.termux.RUN_COMMAND_ARGUMENTS"         // String[]
     private const val EXTRA_WORKDIR = "com.termux.RUN_COMMAND_WORKDIR"             // String
     private const val EXTRA_BACKGROUND = "com.termux.RUN_COMMAND_BACKGROUND"       // boolean
     private const val EXTRA_PENDING_INTENT = "com.termux.RUN_COMMAND_PENDING_INTENT" // PendingIntent
 
-    // Result extras delivered via the PendingIntent[reference:7]
+    // Result extras delivered via the PendingIntent
     private const val EXTRA_RESULT_BUNDLE = "com.termux.RUN_COMMAND_RESULT"
     private const val EXTRA_STDOUT = "com.termux.RUN_COMMAND_STDOUT"
     private const val EXTRA_STDERR = "com.termux.RUN_COMMAND_STDERR"
     private const val EXTRA_EXIT_CODE = "com.termux.RUN_COMMAND_EXIT_CODE"
 
-    // Permission required[reference:8]
+    // Permission required
     const val PERMISSION_RUN_COMMAND = "com.termux.permission.RUN_COMMAND"
 
     private val resultChannel = Channel<Pair<Int, CommandResult>>(Channel.BUFFERED)
@@ -70,7 +70,7 @@ object TermuxExecutor {
                 if (intent.action != ACTION_RESULT) return
                 val commandId = intent.getIntExtra(EXTRA_COMMAND_ID, -1)
 
-                // Extract the result bundle from the PendingIntent[reference:9]
+                // Extract the result bundle from the PendingIntent
                 val bundle = intent.getBundleExtra(EXTRA_RESULT_BUNDLE)
                 if (bundle == null) {
                     Log.w(TAG, "No result bundle for command $commandId")
@@ -98,8 +98,6 @@ object TermuxExecutor {
     /**
      * Executes a shell command via Termux's RunCommandService.
      *
-     * Based on the official documentation[reference:10][reference:11]
-     *
      * @param context           Application context
      * @param commandId         Unique ID to match this command in the result flow
      * @param workingDirectory  Working directory (absolute path)
@@ -113,7 +111,7 @@ object TermuxExecutor {
         executable: String,
         vararg arguments: String
     ) {
-        // Check permission first[reference:12]
+        // Check permission first
         if (!hasRunCommandPermission(context)) {
             Log.e(TAG, "RUN_COMMAND permission not granted")
             resultChannel.trySend(commandId to CommandResult("", "Permission denied", -1))
@@ -124,23 +122,14 @@ object TermuxExecutor {
             setClassName(TERMUX_PACKAGE, RUN_COMMAND_SERVICE)
             action = ACTION_RUN_COMMAND
 
-            // The executable path (full path recommended)[reference:13][reference:14]
             putExtra(EXTRA_COMMAND_PATH, executable)
-
-            // Arguments array[reference:15][reference:16]
             putExtra(EXTRA_ARGUMENTS, arguments)
-
-            // Working directory[reference:17]
             putExtra(EXTRA_WORKDIR, workingDirectory)
-
-            // Run in background (recommended for non-interactive commands)[reference:18]
             putExtra(EXTRA_BACKGROUND, true)
 
-            // Create PendingIntent to receive the result[reference:19][reference:20]
             val resultIntent = Intent(ACTION_RESULT).apply {
                 putExtra(EXTRA_COMMAND_ID, commandId)
             }
-            // Use FLAG_MUTABLE for Android 12+ compatibility[reference:21]
             val pendingIntent = PendingIntent.getBroadcast(
                 context,
                 commandId,
@@ -150,7 +139,6 @@ object TermuxExecutor {
             putExtra(EXTRA_PENDING_INTENT, pendingIntent)
         }
 
-        // Start the service - use startService() or startForegroundService()[reference:22]
         try {
             context.startService(intent)
             Log.d(TAG, "Command $commandId sent to Termux: $executable ${arguments.joinToString(" ")}")

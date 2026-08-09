@@ -52,20 +52,19 @@ object GitManager {
     // Create a Python project: generate main.py and requirements.txt
     fun createPythonProject(context: Context, projectDir: String) {
         val id = ++currentCommandId
-        // We'll use shell commands to create files
         val script = """
             mkdir -p "$projectDir"
             cat > "$projectDir/main.py" << 'EOF'
-#!/usr/bin/env python3
-print("Hello from your custom IDE!")
-def main():
-    print("Python project is ready.")
-if __name__ == "__main__":
-    main()
-EOF
+        #!/usr/bin/env python3
+        print("Hello from your custom IDE!")
+        def main():
+            print("Python project is ready.")
+        if __name__ == "__main__":
+            main()
+        EOF
             cat > "$projectDir/requirements.txt" << 'EOF'
-# Add your dependencies here
-EOF
+        # Add your dependencies here
+        EOF
             echo "Python project created in $projectDir"
         """.trimIndent()
         TermuxExecutor.executeShellCommand(context, id, "/", script)

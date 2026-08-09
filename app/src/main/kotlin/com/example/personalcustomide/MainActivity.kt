@@ -223,7 +223,6 @@ class MainActivity : AppCompatActivity() {
             .show()
     }
 
-    // This method is called from FileExplorerFragment
     fun updateEditor() {
         binding.editorView.invalidate()
     }

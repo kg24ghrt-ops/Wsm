@@ -1,6 +1,8 @@
 #pragma once
+
 #include <string>
 #include <vector>
+#include <memory>
 
 class EditorBuffer {
 public:
@@ -15,7 +17,7 @@ public:
     size_t getLength() const;
 
     // For syntax highlighting
-    std::vector<std::pair<int, int>> getTokensForLine(size_t line) const; // color, length
+    std::vector<std::pair<int, int>> getTokensForLine(size_t line) const;
 
 private:
     struct Impl;

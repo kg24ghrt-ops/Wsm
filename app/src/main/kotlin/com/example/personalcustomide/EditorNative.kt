@@ -20,7 +20,7 @@ object EditorNative {
     external fun nativeInsertText(pos: Int, text: String): Boolean
     external fun nativeDeleteText(pos: Int, len: Int): Boolean
     external fun nativeSaveFile(path: String): Boolean
-    external fun nativeGetLineTokens(line: Int): String  // encoded "type,length;type,length;..."
+    external fun nativeGetLineTokens(line: Int): String // encoded "type,length;type,length;..."
 
     // Safe public wrappers with try-catch
     fun loadFile(path: String): Boolean {
