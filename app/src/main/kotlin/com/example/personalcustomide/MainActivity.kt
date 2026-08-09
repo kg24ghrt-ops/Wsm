@@ -10,6 +10,8 @@ import android.os.Bundle
 import android.os.FileObserver
 import android.provider.Settings
 import android.util.Log
+import android.view.View
+import android.widget.LinearLayout
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
@@ -27,6 +29,9 @@ class MainActivity : AppCompatActivity() {
     private lateinit var bottomStatusText: TextView
     private var fileObserver: FileObserver? = null
     private var currentFilePath: String? = null
+
+    // Find/Replace
+    private var findReplaceDialog: FindReplaceDialog? = null
 
     companion object {
         private const val PERMISSION_REQUEST_CODE = 100
@@ -68,13 +73,33 @@ class MainActivity : AppCompatActivity() {
                 .commit()
         }
 
+        // Setup editor
         binding.editorView.setEditorNative(EditorNative)
+        binding.editorView.onUndoRedoStateChanged = { canUndo, canRedo ->
+            updateUndoRedoButtons(canUndo, canRedo)
+        }
+        binding.editorView.onFindRequested = { showFindReplaceDialog() }
 
         val defaultFile = filesDir.resolve("home/test.txt")
         val fileToLoad = currentFilePath ?: defaultFile.absolutePath
-        // FIXED: fileToLoad is now non-nullable String
+
+        // Open in tab manager
+        EditorTabManager.onTabChanged = { tab ->
+            tab?.let {
+                currentFilePath = it.filePath
+                lifecycleScope.launch {
+                    loadFileAsync(it.filePath)
+                }
+                updateTabUI()
+            }
+        }
+        EditorTabManager.onTabsUpdated = {
+            updateTabUI()
+        }
+
         lifecycleScope.launch { loadFileAsync(fileToLoad) }
 
+        // Setup bottom panel buttons
         binding.btnGitStatus.setOnClickListener {
             val workingDir = filesDir.resolve("home").absolutePath
             GitManager.gitStatus(this, workingDir)
@@ -90,9 +115,140 @@ class MainActivity : AppCompatActivity() {
             GitManager.createPythonProject(this, "$workingDir/my_python_project")
         }
 
+        // Undo/Redo buttons
+        binding.btnUndo.setOnClickListener {
+            binding.editorView.performUndo()
+        }
+        binding.btnRedo.setOnClickListener {
+            binding.editorView.performRedo()
+        }
+
+        // Find button
+        binding.btnFind.setOnClickListener {
+            showFindReplaceDialog()
+        }
+
+        // New tab button
+        binding.btnNewTab.setOnClickListener {
+            showNewFileDialog()
+        }
+
         val workingDir = filesDir.resolve("home").absolutePath
         GitManager.gitStatus(this, workingDir)
         setupFileObserver(fileToLoad)
+
+        // Initial UI update
+        updateTabUI()
+        updateUndoRedoButtons(false, false)
+    }
+
+    private fun updateTabUI() {
+        val tabContainer = binding.tabContainer
+        tabContainer.removeAllViews()
+
+        for ((index, tab) in EditorTabManager.tabs.withIndex()) {
+            val tabView = layoutInflater.inflate(R.layout.tab_item, tabContainer, false)
+            val titleView = tabView.findViewById<TextView>(R.id.tabTitle)
+            val closeView = tabView.findViewById<View>(R.id.tabClose)
+
+            titleView.text = tab.fileName
+            if (tab.isModified) {
+                titleView.text = "${tab.fileName} *"
+                titleView.setTextColor(0xFF2196F3.toInt())
+            } else {
+                titleView.setTextColor(0xFF333333.toInt())
+            }
+
+            // Highlight active tab
+            if (index == EditorTabManager.activeTabIndex) {
+                tabView.setBackgroundColor(0xFFE3F2FD.toInt())
+            } else {
+                tabView.setBackgroundColor(0x00000000.toInt())
+            }
+
+            tabView.setOnClickListener {
+                EditorTabManager.switchToTab(index)
+            }
+
+            closeView.setOnClickListener {
+                val closed = EditorTabManager.closeTab(index)
+                if (closed && EditorTabManager.tabCount > 0) {
+                    val newActive = EditorTabManager.activeTab
+                    newActive?.let {
+                        lifecycleScope.launch { loadFileAsync(it.filePath) }
+                    }
+                } else if (EditorTabManager.tabCount == 0) {
+                    // No tabs left, clear editor
+                    binding.editorView.setEditorNative(EditorNative)
+                    binding.editorView.invalidate()
+                    currentFilePath = null
+                }
+            }
+
+            tabContainer.addView(tabView)
+        }
+
+        // Show/hide tab container based on tab count
+        binding.tabContainer.visibility = if (EditorTabManager.tabCount > 0) View.VISIBLE else View.GONE
+    }
+
+    private fun updateUndoRedoButtons(canUndo: Boolean, canRedo: Boolean) {
+        binding.btnUndo.isEnabled = canUndo
+        binding.btnRedo.isEnabled = canRedo
+    }
+
+    private fun showNewFileDialog() {
+        val input = android.widget.EditText(this)
+        input.hint = "Enter file name (e.g., main.py)"
+        AlertDialog.Builder(this)
+            .setTitle("New File")
+            .setView(input)
+            .setPositiveButton("Create") { _, _ ->
+                val fileName = input.text.toString().trim()
+                if (fileName.isNotEmpty()) {
+                    val file = filesDir.resolve("home").resolve(fileName)
+                    try {
+                        if (file.createNewFile()) {
+                            Toast.makeText(this, "Created $fileName", Toast.LENGTH_SHORT).show()
+                            EditorTabManager.openFile(file.absolutePath)
+                        } else {
+                            Toast.makeText(this, "File already exists", Toast.LENGTH_SHORT).show()
+                        }
+                    } catch (e: Exception) {
+                        Toast.makeText(this, "Failed to create file: ${e.message}", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showFindReplaceDialog() {
+        if (findReplaceDialog == null) {
+            findReplaceDialog = FindReplaceDialog(this)
+        }
+        findReplaceDialog?.show(object : FindReplaceDialog.Callback {
+            override fun onFindNext(searchTerm: String, caseSensitive: Boolean) {
+                binding.editorView.findNext(searchTerm, caseSensitive)
+            }
+
+            override fun onFindPrevious(searchTerm: String, caseSensitive: Boolean) {
+                binding.editorView.findPrevious(searchTerm, caseSensitive)
+            }
+
+            override fun onReplaceAll(searchTerm: String, replaceTerm: String, caseSensitive: Boolean) {
+                binding.editorView.replaceAll(searchTerm, replaceTerm, caseSensitive)
+            }
+
+            override fun onReplaceNext(searchTerm: String, replaceTerm: String, caseSensitive: Boolean) {
+                binding.editorView.replaceNext(searchTerm, replaceTerm, caseSensitive)
+            }
+
+            override fun onClose() {
+                binding.editorView.clearFindHighlights()
+                findReplaceDialog = null
+            }
+        })
     }
 
     private suspend fun loadFileAsync(path: String) = withContext(Dispatchers.IO) {
@@ -100,8 +256,11 @@ class MainActivity : AppCompatActivity() {
         withContext(Dispatchers.Main) {
             if (success) {
                 currentFilePath = path
+                // Add to tab manager
+                EditorTabManager.openFile(path)
                 binding.editorView.invalidate()
                 setupFileObserver(path)
+                updateTabUI()
             } else {
                 Toast.makeText(this@MainActivity, "Failed to load file", Toast.LENGTH_SHORT).show()
             }
@@ -115,7 +274,6 @@ class MainActivity : AppCompatActivity() {
                 if (event == MODIFY || event == CLOSE_WRITE) {
                     runOnUiThread {
                         lifecycleScope.launch {
-                            // FIXED: path is nullable, use safe call
                             path?.let { loadFileAsync(it) }
                         }
                     }
@@ -254,5 +412,6 @@ class MainActivity : AppCompatActivity() {
         super.onDestroy()
         fileObserver?.stopWatching()
         TermuxExecutor.unregisterReceiver(this)
+        findReplaceDialog?.dismiss()
     }
 }
