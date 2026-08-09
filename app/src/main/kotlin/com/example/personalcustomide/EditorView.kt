@@ -12,6 +12,7 @@ import android.view.View
 import android.view.inputmethod.BaseInputConnection
 import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
+import kotlin.math.min
 
 class EditorView @JvmOverloads constructor(
     context: Context,
@@ -21,7 +22,7 @@ class EditorView @JvmOverloads constructor(
 
     private var native: EditorNative? = null
 
-    // Paints for different token colors
+    // Paints for token colors
     private val defaultPaint = TextPaint().apply {
         isAntiAlias = true
         textSize = 40f
@@ -49,12 +50,13 @@ class EditorView @JvmOverloads constructor(
     private var lineHeight = 0f
     private var charWidth = 0f
 
-    private var cursorPos = 0  // absolute character index
+    private var cursorPos = 0
     private var cursorVisible = true
     private var cursorBlinkRunnable: Runnable? = null
 
     private var textLines: List<String> = listOf()
     private var tokenCache: MutableMap<Int, List<TokenInfo>> = mutableMapOf()
+    private var visibleLinesRange = IntRange(0, 0)
 
     init {
         isFocusable = true
@@ -65,20 +67,12 @@ class EditorView @JvmOverloads constructor(
         charWidth = defaultPaint.measureText("W")
         setOnTouchListener { _, event ->
             if (event.action == MotionEvent.ACTION_DOWN) {
-                // Set cursor based on touch position (rough)
-                val x = event.x
-                val y = event.y
-                val lineIndex = ((y - 10) / lineHeight).toInt().coerceIn(0, textLines.size - 1)
+                val lineIndex = ((event.y - 10) / lineHeight).toInt().coerceIn(0, textLines.size - 1)
                 var charIndex = 0
-                // TODO: compute exact character from x using char widths
-                // rough: charIndex = ((x - 10) / charWidth).toInt()
-                // For simplicity, set to end of line
-                charIndex = textLines.getOrElse(lineIndex) { "" }.length
-                // Compute absolute position
+                // Rough estimate based on x position
+                charIndex = ((event.x - 10) / charWidth).toInt().coerceIn(0, textLines[lineIndex].length)
                 var pos = 0
-                for (i in 0 until lineIndex) {
-                    pos += textLines[i].length + 1 // +1 for newline
-                }
+                for (i in 0 until lineIndex) pos += textLines[i].length + 1
                 pos += charIndex
                 setCursorPos(pos)
                 return@setOnTouchListener true
@@ -98,13 +92,8 @@ class EditorView @JvmOverloads constructor(
         native?.let {
             val fullText = it.getText()
             textLines = fullText.split("\n", keepEmpty = true)
+            // Invalidate cache and re-tokenize visible lines later in onDraw
             tokenCache.clear()
-            // Pre-tokenize visible lines
-            val visibleStart = 0
-            val visibleEnd = textLines.size
-            for (i in visibleStart until visibleEnd) {
-                tokenCache[i] = it.getLineTokens(i)
-            }
             invalidate()
         }
     }
@@ -117,21 +106,42 @@ class EditorView @JvmOverloads constructor(
             return
         }
 
+        // Determine visible lines based on canvas height
+        val visibleStart = 0
+        val visibleEnd = min(textLines.size, ((height - 20) / lineHeight).toInt() + 2)
+        val visibleRange = visibleStart until visibleEnd
+
+        // Tokenize lines that are now visible and not cached
+        val linesToTokenize = visibleRange.filter { it !in tokenCache.keys }
+        if (linesToTokenize.isNotEmpty()) {
+            val startTime = System.currentTimeMillis()
+            native?.let { n ->
+                for (line in linesToTokenize) {
+                    tokenCache[line] = n.getLineTokens(line)
+                }
+            }
+            // Log if tokenization took too long
+            val elapsed = System.currentTimeMillis() - startTime
+            if (elapsed > 50) {
+                Log.d("EditorView", "Tokenization took $elapsed ms for ${linesToTokenize.size} lines")
+            }
+        }
+
         var yPos = 10f + lineHeight
-        for ((lineIndex, line) in textLines.withIndex()) {
+        for (lineIndex in visibleStart until visibleEnd) {
+            val line = textLines[lineIndex]
             val tokens = tokenCache[lineIndex] ?: listOf()
             var xPos = 10f
             var tokenStart = 0
             for (token in tokens) {
                 val paint = tokenPaintMap[token.type] ?: defaultPaint
-                val tokenText = line.substring(tokenStart, tokenStart + token.length)
+                val tokenText = line.substring(tokenStart, min(tokenStart + token.length, line.length))
                 canvas.drawText(tokenText, xPos, yPos, paint)
                 xPos += paint.measureText(tokenText)
                 tokenStart += token.length
             }
             // Draw cursor
             if (cursorVisible && hasFocus()) {
-                // compute cursor position on this line
                 val absCursor = cursorPos
                 var lineStart = 0
                 for (i in 0 until lineIndex) {
@@ -147,10 +157,13 @@ class EditorView @JvmOverloads constructor(
             }
             yPos += lineHeight
         }
+
+        // Clean up tokens outside visible range to save memory
+        val keysToRemove = tokenCache.keys.filter { it !in visibleRange }
+        keysToRemove.forEach { tokenCache.remove(it) }
     }
 
-    // ---- Keyboard handling ----
-
+    // Keyboard handling
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         when (keyCode) {
             KeyEvent.KEYCODE_DEL -> {
@@ -162,7 +175,7 @@ class EditorView @JvmOverloads constructor(
                 return true
             }
             KeyEvent.KEYCODE_FORWARD_DEL -> {
-                if (cursorPos < native?.getText()?.length ?: 0) {
+                if (cursorPos < (native?.getText()?.length ?: 0)) {
                     native?.deleteText(cursorPos, 1)
                     updateText()
                 }
@@ -175,7 +188,6 @@ class EditorView @JvmOverloads constructor(
                 return true
             }
             else -> {
-                // Check if it's a character event
                 val unicode = event.unicodeChar
                 if (unicode != 0 && event.action == KeyEvent.ACTION_DOWN) {
                     if (Character.isValidCodePoint(unicode)) {
@@ -191,7 +203,6 @@ class EditorView @JvmOverloads constructor(
         return super.onKeyDown(keyCode, event)
     }
 
-    // For IME composition (soft keyboard)
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection {
         outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI
         outAttrs.inputType = EditorInfo.TYPE_CLASS_TEXT or EditorInfo.TYPE_TEXT_FLAG_MULTI_LINE
@@ -205,8 +216,6 @@ class EditorView @JvmOverloads constructor(
             true
         }
     }
-
-    // ---- Cursor management ----
 
     fun setCursorPos(pos: Int) {
         cursorPos = pos.coerceIn(0, native?.getText()?.length ?: 0)
@@ -234,7 +243,12 @@ class EditorView @JvmOverloads constructor(
         }
     }
 
-    // ---- Utilities ----
+    override fun onDetachedFromWindow() {
+        super.onDetachedFromWindow()
+        cursorBlinkRunnable?.let { removeCallbacks(it) }
+        // Release native reference (optional)
+        native = null
+    }
 
     enum class LexerTokenType {
         KEYWORD, IDENTIFIER, NUMBER, STRING, COMMENT, OPERATOR, PREPROCESSOR, DEFAULT
