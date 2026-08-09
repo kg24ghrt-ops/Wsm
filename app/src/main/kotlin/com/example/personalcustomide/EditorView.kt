@@ -84,8 +84,8 @@ class EditorView @JvmOverloads constructor(
     private fun updateText() {
         native?.let {
             val fullText = it.getText()
-            // Use Char delimiter to avoid overload ambiguity
-            textLines = fullText.split('\n', keepEmpty = true)
+            // FIXED: Use regex split to avoid overload ambiguity
+            textLines = fullText.split("\n".toRegex())
             tokenCache.clear()
             invalidate()
         }

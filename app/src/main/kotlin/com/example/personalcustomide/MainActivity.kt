@@ -72,9 +72,8 @@ class MainActivity : AppCompatActivity() {
 
         val defaultFile = filesDir.resolve("home/test.txt")
         val fileToLoad = currentFilePath ?: defaultFile.absolutePath
-        lifecycleScope.launch {
-            loadFileAsync(fileToLoad)
-        }
+        // FIXED: fileToLoad is now non-nullable String
+        lifecycleScope.launch { loadFileAsync(fileToLoad) }
 
         binding.btnGitStatus.setOnClickListener {
             val workingDir = filesDir.resolve("home").absolutePath
@@ -116,7 +115,8 @@ class MainActivity : AppCompatActivity() {
                 if (event == MODIFY || event == CLOSE_WRITE) {
                     runOnUiThread {
                         lifecycleScope.launch {
-                            loadFileAsync(path)
+                            // FIXED: path is nullable, use safe call
+                            path?.let { loadFileAsync(it) }
                         }
                     }
                 }
