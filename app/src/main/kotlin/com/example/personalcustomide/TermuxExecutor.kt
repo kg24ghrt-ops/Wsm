@@ -130,11 +130,12 @@ object TermuxExecutor {
             val resultIntent = Intent(ACTION_RESULT).apply {
                 putExtra(EXTRA_COMMAND_ID, commandId)
             }
+            // FIX: Use FLAG_IMMUTABLE instead of FLAG_MUTABLE for Android 14+ compatibility
             val pendingIntent = PendingIntent.getBroadcast(
                 context,
                 commandId,
                 resultIntent,
-                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_MUTABLE
+                PendingIntent.FLAG_UPDATE_CURRENT or PendingIntent.FLAG_IMMUTABLE
             )
             putExtra(EXTRA_PENDING_INTENT, pendingIntent)
         }
