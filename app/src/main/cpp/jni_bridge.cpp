@@ -7,7 +7,7 @@
 static EditorBuffer buffer;
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_example_personalcustomide_EditorNative_loadFile(JNIEnv* env, jobject thiz, jstring path) {
+Java_com_example_personalcustomide_EditorNative_nativeLoadFile(JNIEnv* env, jobject thiz, jstring path) {
     const char* utfPath = env->GetStringUTFChars(path, nullptr);
     bool ok = buffer.loadFile(utfPath);
     env->ReleaseStringUTFChars(path, utfPath);
@@ -15,34 +15,33 @@ Java_com_example_personalcustomide_EditorNative_loadFile(JNIEnv* env, jobject th
 }
 
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_example_personalcustomide_EditorNative_getText(JNIEnv* env, jobject thiz) {
+Java_com_example_personalcustomide_EditorNative_nativeGetText(JNIEnv* env, jobject thiz) {
     std::string text = buffer.getText();
     return env->NewStringUTF(text.c_str());
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_example_personalcustomide_EditorNative_insertText(JNIEnv* env, jobject thiz, jint pos, jstring text) {
+Java_com_example_personalcustomide_EditorNative_nativeInsertText(JNIEnv* env, jobject thiz, jint pos, jstring text) {
     const char* utfText = env->GetStringUTFChars(text, nullptr);
     buffer.insertText(pos, utfText);
     env->ReleaseStringUTFChars(text, utfText);
 }
 
 extern "C" JNIEXPORT void JNICALL
-Java_com_example_personalcustomide_EditorNative_deleteText(JNIEnv* env, jobject thiz, jint pos, jint len) {
+Java_com_example_personalcustomide_EditorNative_nativeDeleteText(JNIEnv* env, jobject thiz, jint pos, jint len) {
     buffer.deleteText(pos, len);
 }
 
 extern "C" JNIEXPORT jboolean JNICALL
-Java_com_example_personalcustomide_EditorNative_saveFile(JNIEnv* env, jobject thiz, jstring path) {
+Java_com_example_personalcustomide_EditorNative_nativeSaveFile(JNIEnv* env, jobject thiz, jstring path) {
     const char* utfPath = env->GetStringUTFChars(path, nullptr);
     bool ok = buffer.saveFile(utfPath);
     env->ReleaseStringUTFChars(path, utfPath);
     return ok;
 }
 
-// Returns a String "type,length;type,length;..."
 extern "C" JNIEXPORT jstring JNICALL
-Java_com_example_personalcustomide_EditorNative_getLineTokens(JNIEnv* env, jobject thiz, jint line) {
+Java_com_example_personalcustomide_EditorNative_nativeGetLineTokens(JNIEnv* env, jobject thiz, jint line) {
     std::string full = buffer.getText();
     std::vector<std::string> lines;
     size_t start = 0, end;
