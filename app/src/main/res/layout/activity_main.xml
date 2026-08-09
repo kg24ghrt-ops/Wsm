@@ -34,7 +34,6 @@
         app:layout_constraintStart_toEndOf="@+id/guideline"
         app:layout_constraintEnd_toEndOf="parent">
 
-        <!-- Horizontal scroll for tabs -->
         <HorizontalScrollView
             android:layout_width="0dp"
             android:layout_height="match_parent"
@@ -74,24 +73,24 @@
             android:padding="6dp"
             android:scaleType="center" />
 
-        <!-- Undo Button -->
+        <!-- Undo Button - using public ic_menu_undo -->
         <ImageButton
             android:id="@+id/btnUndo"
             android:layout_width="36dp"
             android:layout_height="match_parent"
-            android:src="@android:drawable/ic_menu_revert"
+            android:src="@android:drawable/ic_menu_undo"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:padding="6dp"
             android:scaleType="center"
             android:enabled="false"
             android:alpha="0.5" />
 
-        <!-- Redo Button -->
+        <!-- Redo Button - using public ic_menu_redo -->
         <ImageButton
             android:id="@+id/btnRedo"
             android:layout_width="36dp"
             android:layout_height="match_parent"
-            android:src="@android:drawable/ic_menu_forward"
+            android:src="@android:drawable/ic_menu_redo"
             android:background="?android:attr/selectableItemBackgroundBorderless"
             android:padding="6dp"
             android:scaleType="center"
