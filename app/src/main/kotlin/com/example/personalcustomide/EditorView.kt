@@ -22,7 +22,6 @@ class EditorView @JvmOverloads constructor(
 
     private var native: EditorNative? = null
 
-    // Paints for token colors
     private val defaultPaint = TextPaint().apply {
         isAntiAlias = true
         textSize = 40f
@@ -49,14 +48,11 @@ class EditorView @JvmOverloads constructor(
 
     private var lineHeight = 0f
     private var charWidth = 0f
-
     private var cursorPos = 0
     private var cursorVisible = true
     private var cursorBlinkRunnable: Runnable? = null
-
     private var textLines: List<String> = listOf()
     private var tokenCache: MutableMap<Int, List<TokenInfo>> = mutableMapOf()
-    private var visibleLinesRange = IntRange(0, 0)
 
     init {
         isFocusable = true
@@ -68,9 +64,7 @@ class EditorView @JvmOverloads constructor(
         setOnTouchListener { _, event ->
             if (event.action == MotionEvent.ACTION_DOWN) {
                 val lineIndex = ((event.y - 10) / lineHeight).toInt().coerceIn(0, textLines.size - 1)
-                var charIndex = 0
-                // Rough estimate based on x position
-                charIndex = ((event.x - 10) / charWidth).toInt().coerceIn(0, textLines[lineIndex].length)
+                var charIndex = ((event.x - 10) / charWidth).toInt().coerceIn(0, textLines[lineIndex].length)
                 var pos = 0
                 for (i in 0 until lineIndex) pos += textLines[i].length + 1
                 pos += charIndex
@@ -79,7 +73,6 @@ class EditorView @JvmOverloads constructor(
             }
             false
         }
-
         startCursorBlink()
     }
 
@@ -91,8 +84,8 @@ class EditorView @JvmOverloads constructor(
     private fun updateText() {
         native?.let {
             val fullText = it.getText()
-            textLines = fullText.split("\n", keepEmpty = true)
-            // Invalidate cache and re-tokenize visible lines later in onDraw
+            // Fix: Use split('\n') to avoid overload ambiguity
+            textLines = fullText.split('\n', keepEmpty = true)
             tokenCache.clear()
             invalidate()
         }
@@ -106,12 +99,10 @@ class EditorView @JvmOverloads constructor(
             return
         }
 
-        // Determine visible lines based on canvas height
         val visibleStart = 0
         val visibleEnd = min(textLines.size, ((height - 20) / lineHeight).toInt() + 2)
         val visibleRange = visibleStart until visibleEnd
 
-        // Tokenize lines that are now visible and not cached
         val linesToTokenize = visibleRange.filter { it !in tokenCache.keys }
         if (linesToTokenize.isNotEmpty()) {
             val startTime = System.currentTimeMillis()
@@ -120,7 +111,6 @@ class EditorView @JvmOverloads constructor(
                     tokenCache[line] = n.getLineTokens(line)
                 }
             }
-            // Log if tokenization took too long
             val elapsed = System.currentTimeMillis() - startTime
             if (elapsed > 50) {
                 Log.d("EditorView", "Tokenization took $elapsed ms for ${linesToTokenize.size} lines")
@@ -140,7 +130,7 @@ class EditorView @JvmOverloads constructor(
                 xPos += paint.measureText(tokenText)
                 tokenStart += token.length
             }
-            // Draw cursor
+
             if (cursorVisible && hasFocus()) {
                 val absCursor = cursorPos
                 var lineStart = 0
@@ -158,12 +148,10 @@ class EditorView @JvmOverloads constructor(
             yPos += lineHeight
         }
 
-        // Clean up tokens outside visible range to save memory
         val keysToRemove = tokenCache.keys.filter { it !in visibleRange }
         keysToRemove.forEach { tokenCache.remove(it) }
     }
 
-    // Keyboard handling
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         when (keyCode) {
             KeyEvent.KEYCODE_DEL -> {
@@ -206,14 +194,43 @@ class EditorView @JvmOverloads constructor(
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection {
         outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI
         outAttrs.inputType = EditorInfo.TYPE_CLASS_TEXT or EditorInfo.TYPE_TEXT_FLAG_MULTI_LINE
-        return BaseInputConnection(this, true) {
-            val text = it.toString()
-            if (text.isNotEmpty()) {
-                native?.insertText(cursorPos, text)
-                cursorPos += text.length
-                updateText()
+
+        // Fix: Properly implement BaseInputConnection with setComposingText
+        return object : BaseInputConnection(this, true) {
+            private var composingText = ""
+
+            override fun setComposingText(text: CharSequence?, newCursorPosition: Int): Boolean {
+                if (text != null) {
+                    // Remove previous composing text if any
+                    if (composingText.isNotEmpty()) {
+                        native?.deleteText(cursorPos - composingText.length, composingText.length)
+                        cursorPos -= composingText.length
+                    }
+                    composingText = text.toString()
+                    native?.insertText(cursorPos, composingText)
+                    cursorPos += composingText.length
+                    updateText()
+                }
+                return true
             }
-            true
+
+            override fun finishComposingText(): Boolean {
+                if (composingText.isNotEmpty()) {
+                    composingText = ""
+                    updateText()
+                }
+                return true
+            }
+
+            override fun commitText(text: CharSequence?, newCursorPosition: Int): Boolean {
+                if (text != null) {
+                    val str = text.toString()
+                    native?.insertText(cursorPos, str)
+                    cursorPos += str.length
+                    updateText()
+                }
+                return true
+            }
         }
     }
 
@@ -246,7 +263,6 @@ class EditorView @JvmOverloads constructor(
     override fun onDetachedFromWindow() {
         super.onDetachedFromWindow()
         cursorBlinkRunnable?.let { removeCallbacks(it) }
-        // Release native reference (optional)
         native = null
     }
 

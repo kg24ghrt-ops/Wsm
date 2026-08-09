@@ -13,13 +13,13 @@ import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
 import com.google.android.material.floatingactionbutton.FloatingActionButton
 import java.io.File
+import java.io.IOException
 
 class FileExplorerFragment : Fragment() {
 
     private lateinit var recyclerView: RecyclerView
     private lateinit var adapter: FileAdapter
     private lateinit var fab: FloatingActionButton
-
     private var rootDir: File? = null
 
     override fun onCreateView(
@@ -33,7 +33,11 @@ class FileExplorerFragment : Fragment() {
         recyclerView.layoutManager = LinearLayoutManager(context)
 
         rootDir = requireContext().filesDir.resolve("home")
-        rootDir?.mkdirs()
+        try {
+            rootDir?.mkdirs()
+        } catch (e: SecurityException) {
+            Toast.makeText(context, "Cannot create directory: ${e.message}", Toast.LENGTH_LONG).show()
+        }
 
         refreshFileList()
 
@@ -45,17 +49,28 @@ class FileExplorerFragment : Fragment() {
     }
 
     private fun refreshFileList() {
-        val files = rootDir?.listFiles()?.toList() ?: emptyList()
+        val root = rootDir ?: return
+        val files = try {
+            root.listFiles()?.toList() ?: emptyList()
+        } catch (e: SecurityException) {
+            Toast.makeText(context, "Cannot read directory: ${e.message}", Toast.LENGTH_SHORT).show()
+            emptyList()
+        }
         adapter = FileAdapter(files) { file ->
             if (file.isFile) {
-                EditorNative.loadFile(file.absolutePath)
-                (activity as? MainActivity)?.updateEditor()
+                val success = EditorNative.loadFile(file.absolutePath)
+                if (success) {
+                    (activity as? MainActivity)?.updateEditor()
+                } else {
+                    Toast.makeText(context, "Failed to load ${file.name}", Toast.LENGTH_SHORT).show()
+                }
             } else {
-                // navigate into directory? For simplicity, just show toast
                 Toast.makeText(context, "Directory: ${file.name}", Toast.LENGTH_SHORT).show()
             }
         }
-        recyclerView.adapter = adapter
+        if (::recyclerView.isInitialized) {
+            recyclerView.adapter = adapter
+        }
     }
 
     private fun showCreateFileDialog() {
@@ -68,11 +83,17 @@ class FileExplorerFragment : Fragment() {
                 val fileName = input.text.toString().trim()
                 if (fileName.isNotEmpty()) {
                     val file = rootDir?.resolve(fileName)
-                    if (file?.createNewFile() == true) {
-                        Toast.makeText(context, "Created $fileName", Toast.LENGTH_SHORT).show()
-                        refreshFileList()
-                    } else {
-                        Toast.makeText(context, "Failed to create file", Toast.LENGTH_SHORT).show()
+                    if (file != null) {
+                        try {
+                            if (file.createNewFile()) {
+                                Toast.makeText(context, "Created $fileName", Toast.LENGTH_SHORT).show()
+                                refreshFileList()
+                            } else {
+                                Toast.makeText(context, "File already exists", Toast.LENGTH_SHORT).show()
+                            }
+                        } catch (e: IOException) {
+                            Toast.makeText(context, "Failed to create file: ${e.message}", Toast.LENGTH_SHORT).show()
+                        }
                     }
                 }
             }
@@ -80,7 +101,6 @@ class FileExplorerFragment : Fragment() {
             .show()
     }
 
-    // Called from Activity to refresh after external changes
     fun refresh() = refreshFileList()
 
     inner class FileAdapter(
@@ -114,11 +134,15 @@ class FileExplorerFragment : Fragment() {
                 .setTitle("Delete ${file.name}?")
                 .setMessage("This action cannot be undone.")
                 .setPositiveButton("Delete") { _, _ ->
-                    if (file.delete()) {
-                        Toast.makeText(context, "Deleted ${file.name}", Toast.LENGTH_SHORT).show()
-                        refreshFileList()
-                    } else {
-                        Toast.makeText(context, "Failed to delete", Toast.LENGTH_SHORT).show()
+                    try {
+                        if (file.delete()) {
+                            Toast.makeText(context, "Deleted ${file.name}", Toast.LENGTH_SHORT).show()
+                            refreshFileList()
+                        } else {
+                            Toast.makeText(context, "Failed to delete", Toast.LENGTH_SHORT).show()
+                        }
+                    } catch (e: SecurityException) {
+                        Toast.makeText(context, "Cannot delete: ${e.message}", Toast.LENGTH_SHORT).show()
                     }
                 }
                 .setNegativeButton("Cancel", null)
