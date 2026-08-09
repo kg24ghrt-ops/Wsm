@@ -1,19 +1,26 @@
 package com.example.personalcustomide
 
+import android.app.AlertDialog
 import android.os.Bundle
 import android.view.LayoutInflater
 import android.view.View
 import android.view.ViewGroup
+import android.widget.EditText
 import android.widget.TextView
+import android.widget.Toast
 import androidx.fragment.app.Fragment
 import androidx.recyclerview.widget.LinearLayoutManager
 import androidx.recyclerview.widget.RecyclerView
+import com.google.android.material.floatingactionbutton.FloatingActionButton
 import java.io.File
 
 class FileExplorerFragment : Fragment() {
 
     private lateinit var recyclerView: RecyclerView
     private lateinit var adapter: FileAdapter
+    private lateinit var fab: FloatingActionButton
+
+    private var rootDir: File? = null
 
     override fun onCreateView(
         inflater: LayoutInflater,
@@ -22,24 +29,61 @@ class FileExplorerFragment : Fragment() {
     ): View? {
         val view = inflater.inflate(R.layout.fragment_file_explorer, container, false)
         recyclerView = view.findViewById(R.id.fileList)
+        fab = view.findViewById(R.id.fabCreateFile)
         recyclerView.layoutManager = LinearLayoutManager(context)
 
-        val rootDir = requireContext().filesDir.resolve("home")
-        rootDir.mkdirs() // ensure exists
-        val files = rootDir.listFiles()?.toList() ?: emptyList()
+        rootDir = requireContext().filesDir.resolve("home")
+        rootDir?.mkdirs()
 
-        adapter = FileAdapter(files) { file ->
-            // Load file into editor
-            if (file.isFile) {
-                EditorNative.loadFile(file.absolutePath)
-                (requireActivity() as MainActivity).findViewById<EditorView>(R.id.editorView).invalidate()
-            }
+        refreshFileList()
+
+        fab.setOnClickListener {
+            showCreateFileDialog()
         }
-        recyclerView.adapter = adapter
+
         return view
     }
 
-    class FileAdapter(
+    private fun refreshFileList() {
+        val files = rootDir?.listFiles()?.toList() ?: emptyList()
+        adapter = FileAdapter(files) { file ->
+            if (file.isFile) {
+                EditorNative.loadFile(file.absolutePath)
+                (activity as? MainActivity)?.updateEditor()
+            } else {
+                // navigate into directory? For simplicity, just show toast
+                Toast.makeText(context, "Directory: ${file.name}", Toast.LENGTH_SHORT).show()
+            }
+        }
+        recyclerView.adapter = adapter
+    }
+
+    private fun showCreateFileDialog() {
+        val input = EditText(context)
+        input.hint = "Enter file name (e.g., main.py)"
+        AlertDialog.Builder(context)
+            .setTitle("Create New File")
+            .setView(input)
+            .setPositiveButton("Create") { _, _ ->
+                val fileName = input.text.toString().trim()
+                if (fileName.isNotEmpty()) {
+                    val file = rootDir?.resolve(fileName)
+                    if (file?.createNewFile() == true) {
+                        Toast.makeText(context, "Created $fileName", Toast.LENGTH_SHORT).show()
+                        refreshFileList()
+                    } else {
+                        Toast.makeText(context, "Failed to create file", Toast.LENGTH_SHORT).show()
+                    }
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    // Called from Activity to refresh after external changes
+    fun refresh() = refreshFileList()
+
+    inner class FileAdapter(
         private val files: List<File>,
         private val onFileClick: (File) -> Unit
     ) : RecyclerView.Adapter<FileAdapter.ViewHolder>() {
@@ -53,12 +97,32 @@ class FileExplorerFragment : Fragment() {
             val file = files[position]
             holder.textView.text = file.name + (if (file.isDirectory) "/" else "")
             holder.itemView.setOnClickListener { onFileClick(file) }
+            holder.itemView.setOnLongClickListener {
+                showDeleteDialog(file)
+                true
+            }
         }
 
         override fun getItemCount(): Int = files.size
 
-        class ViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
+        inner class ViewHolder(itemView: View) : RecyclerView.ViewHolder(itemView) {
             val textView: TextView = itemView.findViewById(R.id.fileName)
+        }
+
+        private fun showDeleteDialog(file: File) {
+            AlertDialog.Builder(context)
+                .setTitle("Delete ${file.name}?")
+                .setMessage("This action cannot be undone.")
+                .setPositiveButton("Delete") { _, _ ->
+                    if (file.delete()) {
+                        Toast.makeText(context, "Deleted ${file.name}", Toast.LENGTH_SHORT).show()
+                        refreshFileList()
+                    } else {
+                        Toast.makeText(context, "Failed to delete", Toast.LENGTH_SHORT).show()
+                    }
+                }
+                .setNegativeButton("Cancel", null)
+                .show()
         }
     }
 }

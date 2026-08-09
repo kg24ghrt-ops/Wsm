@@ -1,5 +1,7 @@
 package com.example.personalcustomide
 
+import com.example.personalcustomide.EditorView.LexerTokenType
+
 object EditorNative {
     init {
         System.loadLibrary("editor")
@@ -10,5 +12,7 @@ object EditorNative {
     external fun insertText(pos: Int, text: String)
     external fun deleteText(pos: Int, len: Int)
     external fun saveFile(path: String): Boolean
-    // For syntax highlighting, we'll return token colors later
+
+    // Returns a list of TokenInfo for the given line (0-indexed)
+    external fun getLineTokens(line: Int): List<EditorView.TokenInfo>
 }

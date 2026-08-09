@@ -1,8 +1,13 @@
 package com.example.personalcustomide
 
 import android.Manifest
+import android.app.AlertDialog
 import android.content.pm.PackageManager
 import android.os.Bundle
+import android.util.Log
+import android.widget.Button
+import android.widget.EditText
+import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
@@ -13,6 +18,7 @@ import kotlinx.coroutines.launch
 
 class MainActivity : AppCompatActivity() {
     private lateinit var binding: ActivityMainBinding
+    private lateinit var bottomStatusText: TextView
 
     companion object {
         private const val PERMISSION_REQUEST_CODE = 100
@@ -23,6 +29,8 @@ class MainActivity : AppCompatActivity() {
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
+
+        bottomStatusText = binding.bottomStatusText
 
         // Check permissions
         checkPermissions()
@@ -39,14 +47,9 @@ class MainActivity : AppCompatActivity() {
         lifecycleScope.launch {
             TermuxExecutor.results.collect { (commandId, result) ->
                 runOnUiThread {
-                    val output = if (result.stdout.isNotEmpty()) result.stdout else result.stderr
-                    Log.d("TermuxResult", "Command $commandId: exit=${result.exitCode}, output=$output")
-                    // Update your UI here
-                    Toast.makeText(
-                        this@MainActivity,
-                        "Command $commandId finished (exit: ${result.exitCode})",
-                        Toast.LENGTH_SHORT
-                    ).show()
+                    GitManager.processResult(commandId, result)
+                    // Update bottom panel with latest status
+                    bottomStatusText.text = GitManager.status.value
                 }
             }
         }
@@ -64,19 +67,77 @@ class MainActivity : AppCompatActivity() {
         if (defaultFile.exists()) {
             EditorNative.loadFile(defaultFile.absolutePath)
             binding.editorView.invalidate()
+        } else {
+            // Create default file
+            defaultFile.parentFile?.mkdirs()
+            defaultFile.writeText("Welcome to your IDE!\nEdit this file.")
+            EditorNative.loadFile(defaultFile.absolutePath)
+            binding.editorView.invalidate()
         }
 
-        // Test Git
-        testGit()
+        // Bottom panel buttons
+        binding.btnGitStatus.setOnClickListener {
+            val workingDir = filesDir.resolve("home").absolutePath
+            GitManager.gitStatus(this, workingDir)
+        }
+        binding.btnGitCommit.setOnClickListener {
+            showCommitDialog()
+        }
+        binding.btnGitPush.setOnClickListener {
+            val workingDir = filesDir.resolve("home").absolutePath
+            GitManager.gitPush(this, workingDir)
+        }
+        binding.btnCloneRepo.setOnClickListener {
+            showCloneDialog()
+        }
+        binding.btnCreatePython.setOnClickListener {
+            val workingDir = filesDir.resolve("home").absolutePath
+            GitManager.createPythonProject(this, "$workingDir/my_python_project")
+        }
+
+        // Initial Git status
+        val workingDir = filesDir.resolve("home").absolutePath
+        GitManager.gitStatus(this, workingDir)
     }
 
-    private fun testGit() {
-        if (TermuxExecutor.hasRunCommandPermission(this)) {
-            val workingDir = filesDir.absolutePath
-            TermuxExecutor.executeShellCommand(this, 999, workingDir, "git --version")
-        } else {
-            Toast.makeText(this, "RUN_COMMAND permission not granted", Toast.LENGTH_SHORT).show()
-        }
+    private fun showCommitDialog() {
+        val input = EditText(this)
+        input.hint = "Commit message"
+        AlertDialog.Builder(this)
+            .setTitle("Commit Changes")
+            .setView(input)
+            .setPositiveButton("Commit") { _, _ ->
+                val msg = input.text.toString().trim()
+                if (msg.isNotEmpty()) {
+                    val workingDir = filesDir.resolve("home").absolutePath
+                    GitManager.gitCommit(this, workingDir, msg)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    private fun showCloneDialog() {
+        val input = EditText(this)
+        input.hint = "Git repository URL (e.g., https://github.com/user/repo.git)"
+        AlertDialog.Builder(this)
+            .setTitle("Clone Repository")
+            .setView(input)
+            .setPositiveButton("Clone") { _, _ ->
+                val url = input.text.toString().trim()
+                if (url.isNotEmpty()) {
+                    val workingDir = filesDir.resolve("home").absolutePath
+                    // Extract repo name from URL
+                    val repoName = url.substringAfterLast('/').removeSuffix(".git")
+                    GitManager.gitClone(this, workingDir, url, repoName)
+                }
+            }
+            .setNegativeButton("Cancel", null)
+            .show()
+    }
+
+    fun updateEditor() {
+        binding.editorView.invalidate()
     }
 
     private fun checkPermissions() {
@@ -92,7 +153,7 @@ class MainActivity : AppCompatActivity() {
             ActivityCompat.requestPermissions(this, missingStorage.toTypedArray(), PERMISSION_REQUEST_CODE)
         }
 
-        // Termux RUN_COMMAND permission[reference:24]
+        // Termux RUN_COMMAND permission
         if (!TermuxExecutor.hasRunCommandPermission(this)) {
             ActivityCompat.requestPermissions(
                 this,
@@ -112,7 +173,6 @@ class MainActivity : AppCompatActivity() {
             TERMUX_PERMISSION_REQUEST_CODE -> {
                 if (grantResults.isNotEmpty() && grantResults[0] == PackageManager.PERMISSION_GRANTED) {
                     Toast.makeText(this, "RUN_COMMAND permission granted", Toast.LENGTH_SHORT).show()
-                    testGit()
                 } else {
                     Toast.makeText(this, "RUN_COMMAND permission required", Toast.LENGTH_LONG).show()
                 }
