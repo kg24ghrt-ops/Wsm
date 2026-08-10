@@ -5,7 +5,6 @@
     android:layout_width="match_parent"
     android:layout_height="match_parent">
 
-    <!-- File Explorer Pane -->
     <FrameLayout
         android:id="@+id/fileExplorerPane"
         android:layout_width="280dp"
@@ -20,18 +19,16 @@
 
     </FrameLayout>
 
-    <!-- Editor Pane -->
     <androidx.coordinatorlayout.widget.CoordinatorLayout
         android:layout_width="400dp"
         android:layout_height="match_parent"
         android:layout_weight="1"
-        android:background="?attr/colorBackground">
+        android:background="?android:attr/colorBackground">
 
         <androidx.constraintlayout.widget.ConstraintLayout
             android:layout_width="match_parent"
             android:layout_height="match_parent">
 
-            <!-- Toolbar -->
             <com.google.android.material.appbar.MaterialToolbar
                 android:id="@+id/toolbar"
                 android:layout_width="0dp"
@@ -113,7 +110,6 @@
                 </LinearLayout>
             </com.google.android.material.appbar.MaterialToolbar>
 
-            <!-- Editor -->
             <com.example.personalcustomide.EditorView
                 android:id="@+id/editorView"
                 android:layout_width="0dp"
@@ -126,7 +122,6 @@
                 app:layout_constraintStart_toStartOf="parent"
                 app:layout_constraintEnd_toEndOf="parent" />
 
-            <!-- Bottom Status Bar -->
             <com.google.android.material.bottomappbar.BottomAppBar
                 android:id="@+id/bottomBar"
                 android:layout_width="0dp"

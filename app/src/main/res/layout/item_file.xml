@@ -21,7 +21,7 @@
         <ImageView
             android:layout_width="@dimen/icon_size"
             android:layout_height="@dimen/icon_size"
-            android:src="@android:drawable/ic_menu_file"
+            android:src="@drawable/ic_file"
             app:tint="?attr/colorOnSurfaceVariant" />
 
         <TextView

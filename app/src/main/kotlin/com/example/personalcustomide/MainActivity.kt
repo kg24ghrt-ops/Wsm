@@ -59,7 +59,6 @@ class MainActivity : AppCompatActivity() {
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
-        // Initialize views
         bottomStatusText = binding.bottomStatusText
         tabContainer = binding.tabContainer
         btnUndo = binding.btnUndo
@@ -73,12 +72,8 @@ class MainActivity : AppCompatActivity() {
             currentFilePath = savedInstanceState.getString("currentFilePath")
         }
 
-        // Load settings
         currentSettings = EditorSettings.load(this)
-
-        // Initialize auto-save
         AutoSaveManager.initialize(this)
-
         checkPermissions()
 
         if (!TermuxExecutor.isTermuxInstalled(this)) {
@@ -102,17 +97,14 @@ class MainActivity : AppCompatActivity() {
                 .commit()
         }
 
-        // Setup editor
         binding.editorView.setEditorNative(EditorNative)
         binding.editorView.applySettings(currentSettings)
 
-        // Editor callbacks
         binding.editorView.onUndoRedoStateChanged = { canUndo, canRedo ->
             updateUndoRedoButtons(canUndo, canRedo)
         }
         binding.editorView.onFindRequested = { showFindReplaceDialog() }
 
-        // Content change listener for auto-save
         binding.editorView.setOnContentChanged { content ->
             isContentModified = true
             AutoSaveManager.updateContent(content)
@@ -125,15 +117,11 @@ class MainActivity : AppCompatActivity() {
         val defaultFile = filesDir.resolve("home/test.txt")
         val fileToLoad = currentFilePath ?: defaultFile.absolutePath
 
-        // Check for draft before loading
         checkForDraft(fileToLoad)
-
         lifecycleScope.launch { loadFileAsync(fileToLoad) }
 
-        // Setup keyboard shortcuts
         setupKeyboardShortcuts()
 
-        // Setup bottom panel buttons
         binding.btnGitStatus.setOnClickListener {
             val workingDir = filesDir.resolve("home").absolutePath
             GitManager.gitStatus(this, workingDir)
@@ -149,31 +137,19 @@ class MainActivity : AppCompatActivity() {
             GitManager.createPythonProject(this, "$workingDir/my_python_project")
         }
 
-        // Undo/Redo buttons
         btnUndo.setOnClickListener { binding.editorView.performUndo() }
         btnRedo.setOnClickListener { binding.editorView.performRedo() }
-
-        // Find button
         btnFind.setOnClickListener { showFindReplaceDialog() }
-
-        // New tab button
         btnNewTab.setOnClickListener { showNewFileDialog() }
-
-        // Settings button
         btnSettings.setOnClickListener { showSettingsDialog() }
-
-        // Files button (toggle file explorer on phone)
         btnFiles.setOnClickListener { toggleFileExplorer() }
 
         val workingDir = filesDir.resolve("home").absolutePath
         GitManager.gitStatus(this, workingDir)
         setupFileObserver(fileToLoad)
 
-        // Initial UI update
         updateTabUI()
         updateUndoRedoButtons(false, false)
-
-        // Start auto-save
         startAutoSave()
     }
 
@@ -183,8 +159,6 @@ class MainActivity : AppCompatActivity() {
             it.visibility = if (it.visibility == View.VISIBLE) View.GONE else View.VISIBLE
         }
     }
-
-    // --- Keyboard Shortcuts ---
 
     private fun setupKeyboardShortcuts() {
         keyboardHandler = KeyboardShortcutHandler(binding.editorView)
@@ -200,12 +174,12 @@ class MainActivity : AppCompatActivity() {
             override fun onReplace() { showFindReplaceDialog() }
             override fun onUndo() { binding.editorView.performUndo() }
             override fun onRedo() { binding.editorView.performRedo() }
-            override fun onSelectAll() { /* Implement select all */ }
-            override fun onCopy() { /* Implement copy */ }
-            override fun onCut() { /* Implement cut */ }
-            override fun onPaste() { /* Implement paste */ }
+            override fun onSelectAll() { }
+            override fun onCopy() { }
+            override fun onCut() { }
+            override fun onPaste() { }
             override fun onNewFile() { showNewFileDialog() }
-            override fun onOpenFile() { /* Open file picker */ }
+            override fun onOpenFile() { }
             override fun onCloseFile() { closeCurrentTab() }
             override fun onToggleLineNumbers() { binding.editorView.toggleLineNumbers() }
             override fun onToggleWordWrap() { binding.editorView.toggleWordWrap() }
@@ -222,8 +196,6 @@ class MainActivity : AppCompatActivity() {
         }
         return super.onKeyDown(keyCode, event)
     }
-
-    // --- Auto-Save ---
 
     private var lastSearchTerm = ""
     private var lastCaseSensitive = false
@@ -263,8 +235,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // --- Settings ---
-
     private fun showSettingsDialog() {
         val dialog = SettingsDialog(this)
         dialog.show(currentSettings, object : SettingsDialog.Callback {
@@ -278,8 +248,6 @@ class MainActivity : AppCompatActivity() {
             }
         })
     }
-
-    // --- File Operations ---
 
     private fun saveCurrentFile() {
         val filePath = EditorTabManager.getActiveFilePath()
@@ -316,8 +284,6 @@ class MainActivity : AppCompatActivity() {
             updateTabUI()
         }
     }
-
-    // --- Tab Management ---
 
     private fun updateTabUI() {
         val container = binding.tabContainer as android.widget.LinearLayout
@@ -389,8 +355,6 @@ class MainActivity : AppCompatActivity() {
         btnRedo.alpha = if (canRedo) 1.0f else 0.38f
     }
 
-    // --- Find/Replace ---
-
     private fun showFindReplaceDialog() {
         if (findReplaceDialog == null) {
             findReplaceDialog = FindReplaceDialog(this)
@@ -423,8 +387,6 @@ class MainActivity : AppCompatActivity() {
         })
     }
 
-    // --- File Loading ---
-
     private suspend fun loadFileAsync(path: String) = withContext(Dispatchers.IO) {
         val loader = LargeFileLoader(path)
         val success = if (loader.isLargeFile(path)) {
@@ -446,8 +408,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // --- File Observer ---
-
     private fun setupFileObserver(path: String) {
         fileObserver?.stopWatching()
         fileObserver = object : FileObserver(path) {
@@ -463,8 +423,6 @@ class MainActivity : AppCompatActivity() {
         }
         fileObserver?.startWatching()
     }
-
-    // --- Dialog Helpers ---
 
     private fun showNewFileDialog() {
         val input = EditText(this)
@@ -563,8 +521,6 @@ class MainActivity : AppCompatActivity() {
         startActivity(intent)
     }
 
-    // --- Permissions ---
-
     private fun checkPermissions() {
         if (Build.VERSION.SDK_INT < Build.VERSION_CODES.Q) {
             val storagePerms = arrayOf(
@@ -610,8 +566,6 @@ class MainActivity : AppCompatActivity() {
         }
     }
 
-    // --- Lifecycle ---
-
     override fun onPause() {
         super.onPause()
         val content = binding.editorView.getContentForAutoSave()
@@ -639,8 +593,6 @@ class MainActivity : AppCompatActivity() {
         TermuxExecutor.unregisterReceiver(this)
         findReplaceDialog?.dismiss()
     }
-
-    // --- Public Methods for Fragments ---
 
     fun updateEditor() {
         binding.editorView.invalidate()
