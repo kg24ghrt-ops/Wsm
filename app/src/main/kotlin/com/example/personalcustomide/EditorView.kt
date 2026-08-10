@@ -79,6 +79,15 @@ class EditorView @JvmOverloads constructor(
         color = 0x44FFEB3B.toInt() // Semi-transparent yellow
     }
 
+    // --- NEW: Settings, Lazy Loading, Auto-Save ---
+    private var settings = EditorSettings()
+    private var largeFileLoader: LargeFileLoader? = null
+    private var isLargeFile = false
+    private var loadedChunks = mutableMapOf<Int, String>()
+    private var visibleLineStart = 0
+    private var visibleLineEnd = 100
+    private var onContentChanged: ((String) -> Unit)? = null
+
     init {
         isFocusable = true
         isFocusableInTouchMode = true
@@ -108,6 +117,89 @@ class EditorView @JvmOverloads constructor(
         }
     }
 
+    // --- NEW: Settings Application ---
+    fun applySettings(newSettings: EditorSettings) {
+        settings = newSettings
+        // Update font size
+        defaultPaint.textSize = settings.fontSize
+        lineNumberPaint.textSize = settings.fontSize * 0.8f
+        lineHeight = defaultPaint.fontSpacing
+        charWidth = defaultPaint.measureText("W")
+        // Update line numbers
+        showLineNumbers = settings.showLineNumbers
+        // Update syntax highlighting
+        if (!settings.enableSyntaxHighlighting) {
+            tokenCache.clear()
+        }
+        invalidate()
+    }
+
+    // --- NEW: Lazy Loading ---
+    fun loadFileLazy(path: String): Boolean {
+        return try {
+            val loader = LargeFileLoader(path)
+            val content = loader.load()
+            if (content != null) {
+                largeFileLoader = loader
+                isLargeFile = loader.isLarge()
+                if (isLargeFile) {
+                    // Load first chunk
+                    textLines = content.split("\n".toRegex())
+                    tokenCache.clear()
+                    invalidate()
+                    true
+                } else {
+                    // Small file - load normally
+                    textLines = content.split("\n".toRegex())
+                    tokenCache.clear()
+                    invalidate()
+                    true
+                }
+            } else false
+        } catch (e: Exception) {
+            Log.e("EditorView", "Failed to load large file", e)
+            false
+        }
+    }
+
+    // --- NEW: Content for Auto-Save ---
+    fun getContentForAutoSave(): String = getText()
+
+    fun setOnContentChanged(listener: (String) -> Unit) {
+        onContentChanged = listener
+    }
+
+    private fun notifyContentChanged() {
+        onContentChanged?.invoke(getText())
+    }
+
+    // --- NEW: Zoom Support ---
+    fun zoomIn() {
+        val newSize = (settings.fontSize * 1.1f).coerceAtMost(120f)
+        applySettings(settings.copy(fontSize = newSize))
+    }
+
+    fun zoomOut() {
+        val newSize = (settings.fontSize * 0.9f).coerceAtLeast(12f)
+        applySettings(settings.copy(fontSize = newSize))
+    }
+
+    fun zoomReset() {
+        applySettings(settings.copy(fontSize = 40f))
+    }
+
+    // --- NEW: Toggle Line Numbers ---
+    fun toggleLineNumbers() {
+        showLineNumbers = !showLineNumbers
+        applySettings(settings.copy(showLineNumbers = showLineNumbers))
+    }
+
+    // --- NEW: Toggle Word Wrap ---
+    fun toggleWordWrap() {
+        val newWordWrap = !settings.wordWrap
+        applySettings(settings.copy(wordWrap = newWordWrap))
+    }
+
     fun setEditorNative(native: EditorNative) {
         this.native = native
         updateText()
@@ -125,6 +217,7 @@ class EditorView @JvmOverloads constructor(
             textLines = fullText.split("\n".toRegex())
             tokenCache.clear()
             invalidate()
+            notifyContentChanged()
         }
     }
 
@@ -549,6 +642,11 @@ class EditorView @JvmOverloads constructor(
     }
 
     fun getCursorPos(): Int = cursorPos
+
+    // --- NEW: Get full text ---
+    fun getText(): String {
+        return native?.getText() ?: ""
+    }
 
     private fun startCursorBlink() {
         cursorBlinkRunnable?.let { removeCallbacks(it) }
