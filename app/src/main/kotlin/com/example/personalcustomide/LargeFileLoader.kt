@@ -3,7 +3,6 @@ package com.example.personalcustomide
 import android.util.Log
 import java.io.File
 import java.io.RandomAccessFile
-import java.nio.charset.Charset
 
 /**
  * Handles lazy loading of large files using memory-mapped I/O.
@@ -19,7 +18,7 @@ class LargeFileLoader(private val filePath: String) {
     private var file: RandomAccessFile? = null
     private var fileSize: Long = 0
     private var isLargeFile = false
-    private var loadedChunks = mutableMapOf<Int, String>()
+    private val loadedChunks = mutableMapOf<Int, String>()
     private var fullContent: String? = null
     private var totalLines = 0
 
@@ -35,7 +34,6 @@ class LargeFileLoader(private val filePath: String) {
             if (isLargeFile) {
                 // For large files, just load the first chunk
                 loadChunk(0)
-                // Count lines quickly without loading entire file
                 countLines()
                 "File loaded (${fileSize / 1024} KB) - viewing first chunk"
             } else {
@@ -50,9 +48,13 @@ class LargeFileLoader(private val filePath: String) {
         }
     }
 
+    // FIX: Added missing loadChunk method
+    fun loadChunk(chunkIndex: Int): String? {
+        return getChunk(chunkIndex)
+    }
+
     fun getFullText(): String? {
         if (!isLargeFile) return fullContent
-
         // For large files, return the loaded chunks as a single string
         val chunks = loadedChunks.keys.sorted().mapNotNull { loadedChunks[it] }
         return if (chunks.isNotEmpty()) chunks.joinToString("") else null
