@@ -97,6 +97,8 @@ dependencies {
     implementation("androidx.activity:activity-ktx:1.9.2")
     implementation("androidx.lifecycle:lifecycle-runtime-ktx:2.8.5")
     implementation("androidx.lifecycle:lifecycle-viewmodel-ktx:2.8.5")
+    implementation("androidx.core:core-splashscreen:1.0.1")
+    implementation("androidx.slidingpanelayout:slidingpanelayout:1.2.0")
 
     testImplementation("junit:junit:4.13.2")
 

@@ -12,12 +12,14 @@ import android.provider.Settings
 import android.util.Log
 import android.view.KeyEvent
 import android.view.View
+import android.widget.EditText
 import android.widget.ImageButton
 import android.widget.TextView
 import android.widget.Toast
 import androidx.appcompat.app.AppCompatActivity
 import androidx.core.app.ActivityCompat
 import androidx.core.content.ContextCompat
+import androidx.core.splashscreen.SplashScreen.Companion.installSplashScreen
 import androidx.lifecycle.lifecycleScope
 import com.example.personalcustomide.databinding.ActivityMainBinding
 import kotlinx.coroutines.Dispatchers
@@ -26,20 +28,23 @@ import kotlinx.coroutines.withContext
 import java.io.File
 
 class MainActivity : AppCompatActivity() {
+
     private lateinit var binding: ActivityMainBinding
     private lateinit var bottomStatusText: TextView
+    private lateinit var tabContainer: View
+    private lateinit var btnUndo: ImageButton
+    private lateinit var btnRedo: ImageButton
+    private lateinit var btnFind: ImageButton
+    private lateinit var btnNewTab: ImageButton
+    private lateinit var btnSettings: ImageButton
+    private lateinit var btnFiles: ImageButton
 
     private var fileObserver: FileObserver? = null
     private var currentFilePath: String? = null
     private var isContentModified = false
 
-    // Find/Replace
     private var findReplaceDialog: FindReplaceDialog? = null
-
-    // Settings
     private var currentSettings = EditorSettings()
-
-    // Keyboard shortcuts
     private lateinit var keyboardHandler: KeyboardShortcutHandler
 
     companion object {
@@ -49,11 +54,20 @@ class MainActivity : AppCompatActivity() {
     }
 
     override fun onCreate(savedInstanceState: Bundle?) {
+        val splashScreen = installSplashScreen()
         super.onCreate(savedInstanceState)
         binding = ActivityMainBinding.inflate(layoutInflater)
         setContentView(binding.root)
 
+        // Initialize views
         bottomStatusText = binding.bottomStatusText
+        tabContainer = binding.tabContainer
+        btnUndo = binding.btnUndo
+        btnRedo = binding.btnRedo
+        btnFind = binding.btnFind
+        btnNewTab = binding.btnNewTab
+        btnSettings = binding.btnSettings
+        btnFiles = binding.btnFiles
 
         if (savedInstanceState != null) {
             currentFilePath = savedInstanceState.getString("currentFilePath")
@@ -111,20 +125,6 @@ class MainActivity : AppCompatActivity() {
         val defaultFile = filesDir.resolve("home/test.txt")
         val fileToLoad = currentFilePath ?: defaultFile.absolutePath
 
-        // Open in tab manager
-        EditorTabManager.onTabChanged = { tab ->
-            tab?.let {
-                currentFilePath = it.filePath
-                lifecycleScope.launch {
-                    loadFileAsync(it.filePath)
-                }
-                updateTabUI()
-            }
-        }
-        EditorTabManager.onTabsUpdated = {
-            updateTabUI()
-        }
-
         // Check for draft before loading
         checkForDraft(fileToLoad)
 
@@ -150,27 +150,20 @@ class MainActivity : AppCompatActivity() {
         }
 
         // Undo/Redo buttons
-        binding.btnUndo.setOnClickListener {
-            binding.editorView.performUndo()
-        }
-        binding.btnRedo.setOnClickListener {
-            binding.editorView.performRedo()
-        }
+        btnUndo.setOnClickListener { binding.editorView.performUndo() }
+        btnRedo.setOnClickListener { binding.editorView.performRedo() }
 
         // Find button
-        binding.btnFind.setOnClickListener {
-            showFindReplaceDialog()
-        }
+        btnFind.setOnClickListener { showFindReplaceDialog() }
 
         // New tab button
-        binding.btnNewTab.setOnClickListener {
-            showNewFileDialog()
-        }
+        btnNewTab.setOnClickListener { showNewFileDialog() }
 
         // Settings button
-        binding.btnSettings.setOnClickListener {
-            showSettingsDialog()
-        }
+        btnSettings.setOnClickListener { showSettingsDialog() }
+
+        // Files button (toggle file explorer on phone)
+        btnFiles.setOnClickListener { toggleFileExplorer() }
 
         val workingDir = filesDir.resolve("home").absolutePath
         GitManager.gitStatus(this, workingDir)
@@ -182,6 +175,13 @@ class MainActivity : AppCompatActivity() {
 
         // Start auto-save
         startAutoSave()
+    }
+
+    private fun toggleFileExplorer() {
+        val container = findViewById<View>(R.id.fileExplorerContainer)
+        container?.let {
+            it.visibility = if (it.visibility == View.VISIBLE) View.GONE else View.VISIBLE
+        }
     }
 
     // --- Keyboard Shortcuts ---
@@ -266,14 +266,12 @@ class MainActivity : AppCompatActivity() {
     // --- Settings ---
 
     private fun showSettingsDialog() {
-        // FIX: Use proper callback object
         val dialog = SettingsDialog(this)
         dialog.show(currentSettings, object : SettingsDialog.Callback {
             override fun onSettingsChanged(settings: EditorSettings) {
                 currentSettings = settings
                 EditorSettings.save(this@MainActivity, settings)
                 binding.editorView.applySettings(settings)
-                // Update auto-save settings
                 AutoSaveManager.setAutoSaveEnabled(settings.autoSave)
                 AutoSaveManager.setAutoSaveInterval(settings.autoSaveInterval)
                 Toast.makeText(this@MainActivity, "Settings applied", Toast.LENGTH_SHORT).show()
@@ -322,26 +320,29 @@ class MainActivity : AppCompatActivity() {
     // --- Tab Management ---
 
     private fun updateTabUI() {
-        val tabContainer = binding.tabContainer
-        tabContainer.removeAllViews()
+        val container = binding.tabContainer as android.widget.LinearLayout
+        container.removeAllViews()
 
         for ((index, tab) in EditorTabManager.tabs.withIndex()) {
-            val tabView = layoutInflater.inflate(R.layout.tab_item, tabContainer, false)
+            val tabView = layoutInflater.inflate(R.layout.tab_item, container, false)
             val titleView = tabView.findViewById<TextView>(R.id.tabTitle)
             val closeView = tabView.findViewById<View>(R.id.tabClose)
 
             titleView.text = tab.fileName
             if (tab.isModified) {
                 titleView.text = "${tab.fileName} *"
-                titleView.setTextColor(0xFF2196F3.toInt())
+                titleView.setTextColor(ContextCompat.getColor(this, R.color.error))
             } else {
-                titleView.setTextColor(0xFF333333.toInt())
+                titleView.setTextColor(ContextCompat.getColor(this, R.color.on_surface))
             }
 
             if (index == EditorTabManager.activeTabIndex) {
-                tabView.setBackgroundColor(0xFFE3F2FD.toInt())
+                (tabView as com.google.android.material.card.MaterialCardView)
+                    .setCardBackgroundColor(ContextCompat.getColor(this, R.color.primary_container))
+                titleView.setTextColor(ContextCompat.getColor(this, R.color.on_primary_container))
             } else {
-                tabView.setBackgroundColor(0x00000000.toInt())
+                (tabView as com.google.android.material.card.MaterialCardView)
+                    .setCardBackgroundColor(ContextCompat.getColor(this, R.color.surface_variant))
             }
 
             tabView.setOnClickListener {
@@ -352,7 +353,7 @@ class MainActivity : AppCompatActivity() {
                 closeTabWithCheck(index)
             }
 
-            tabContainer.addView(tabView)
+            container.addView(tabView)
         }
 
         binding.tabContainer.visibility = if (EditorTabManager.tabCount > 0) View.VISIBLE else View.GONE
@@ -382,10 +383,10 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun updateUndoRedoButtons(canUndo: Boolean, canRedo: Boolean) {
-        binding.btnUndo.isEnabled = canUndo
-        binding.btnUndo.alpha = if (canUndo) 1.0f else 0.5f
-        binding.btnRedo.isEnabled = canRedo
-        binding.btnRedo.alpha = if (canRedo) 1.0f else 0.5f
+        btnUndo.isEnabled = canUndo
+        btnUndo.alpha = if (canUndo) 1.0f else 0.38f
+        btnRedo.isEnabled = canRedo
+        btnRedo.alpha = if (canRedo) 1.0f else 0.38f
     }
 
     // --- Find/Replace ---
@@ -466,7 +467,7 @@ class MainActivity : AppCompatActivity() {
     // --- Dialog Helpers ---
 
     private fun showNewFileDialog() {
-        val input = android.widget.EditText(this)
+        val input = EditText(this)
         input.hint = "Enter file name (e.g., main.py)"
         AlertDialog.Builder(this)
             .setTitle("New File")
@@ -492,7 +493,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showCommitDialog() {
-        val input = android.widget.EditText(this)
+        val input = EditText(this)
         input.hint = "Commit message"
         AlertDialog.Builder(this)
             .setTitle("Commit Changes")
@@ -509,7 +510,7 @@ class MainActivity : AppCompatActivity() {
     }
 
     private fun showCloneDialog() {
-        val input = android.widget.EditText(this)
+        val input = EditText(this)
         input.hint = "Git repository URL (e.g., https://github.com/user/repo.git)"
         AlertDialog.Builder(this)
             .setTitle("Clone Repository")
