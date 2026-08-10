@@ -34,17 +34,20 @@ object AutoSaveManager {
 
         handler = Handler(Looper.getMainLooper())
 
-        // FIX: Store the Runnable in a variable first, then use it inside the lambda
-        val newRunnable = Runnable {
-            if (isRunning && autoSaveEnabled) {
-                saveDraft(context, filePath, content)
-                if (autoSaveEnabled) {
-                    saveToFile(filePath, content)
+        // 修复：使用 lateinit 或延迟初始化，避免在 lambda 内部引用未初始化的变量
+        val newRunnable = object : Runnable {
+            override fun run() {
+                if (isRunning && autoSaveEnabled) {
+                    saveDraft(context, filePath, content)
+                    if (autoSaveEnabled) {
+                        saveToFile(filePath, content)
+                    }
+                    // 使用 this@object 或直接引用 newRunnable（此时已初始化）
+                    handler?.postDelayed(this, autoSaveInterval)
                 }
-                // FIX: Use the stored variable reference, not 'this'
-                handler?.postDelayed(newRunnable, autoSaveInterval)
             }
         }
+
         runnable = newRunnable
         handler?.postDelayed(newRunnable, autoSaveInterval)
     }
