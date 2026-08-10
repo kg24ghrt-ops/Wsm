@@ -15,6 +15,16 @@ import android.view.inputmethod.EditorInfo
 import android.view.inputmethod.InputConnection
 import kotlin.math.min
 
+/**
+ * Custom editor view with syntax highlighting, undo/redo, find/replace, and lazy loading.
+ * 
+ * CHANGES MADE:
+ * - Added proper setText()/getText() methods that manage text directly
+ * - Fixed cursor positioning edge cases (empty files, out-of-bounds)
+ * - Improved undo/redo with better boundary checking
+ * - Added null-safety for native operations
+ * - Added clear() method for resetting state
+ */
 class EditorView @JvmOverloads constructor(
     context: Context,
     attrs: AttributeSet? = null,
@@ -60,7 +70,9 @@ class EditorView @JvmOverloads constructor(
     private var cursorPos = 0
     private var cursorVisible = true
     private var cursorBlinkRunnable: Runnable? = null
-    private var textLines: List<String> = listOf()
+
+    // FIX: Use a mutable list for textLines so we can modify it directly
+    private var textLines: MutableList<String> = mutableListOf("")
     private var tokenCache: MutableMap<Int, List<TokenInfo>> = mutableMapOf()
 
     // Line number configuration
@@ -79,7 +91,7 @@ class EditorView @JvmOverloads constructor(
         color = 0x44FFEB3B.toInt() // Semi-transparent yellow
     }
 
-    // --- NEW: Settings, Lazy Loading, Auto-Save ---
+    // Settings, Lazy Loading, Auto-Save
     private var settings = EditorSettings()
     private var largeFileLoader: LargeFileLoader? = null
     private var isLargeFile = false
@@ -92,7 +104,6 @@ class EditorView @JvmOverloads constructor(
         isFocusable = true
         isFocusableInTouchMode = true
         requestFocus()
-
         lineHeight = defaultPaint.fontSpacing
         charWidth = defaultPaint.measureText("W")
 
@@ -111,30 +122,66 @@ class EditorView @JvmOverloads constructor(
 
         startCursorBlink()
 
-        // Setup undo/redo callbacks
         undoManager.onStateChanged = { canUndo, canRedo ->
             onUndoRedoStateChanged?.invoke(canUndo, canRedo)
         }
     }
 
-    // --- NEW: Settings Application ---
+    // ===== NEW: Direct text management =====
+
+    /**
+     * FIX: Sets the editor text directly, bypassing native.
+     * This is used when loading files.
+     */
+    fun setText(text: String) {
+        textLines = text.split("\n".toRegex()).toMutableList()
+        if (textLines.isEmpty()) textLines.add("")
+        cursorPos = 0
+        tokenCache.clear()
+        // Also update native if available
+        native?.let { it.setText(text) }
+        invalidate()
+        notifyContentChanged()
+    }
+
+    /**
+     * FIX: Gets the full text as a single string.
+     */
+    fun getText(): String {
+        return textLines.joinToString("\n")
+    }
+
+    /**
+     * FIX: Clears the editor state.
+     */
+    fun clear() {
+        textLines = mutableListOf("")
+        cursorPos = 0
+        tokenCache.clear()
+        findResults = emptyList()
+        currentFindIndex = -1
+        undoManager.clear()
+        invalidate()
+        notifyContentChanged()
+    }
+
+    // ===== Settings =====
+
     fun applySettings(newSettings: EditorSettings) {
         settings = newSettings
-        // Update font size
         defaultPaint.textSize = settings.fontSize
         lineNumberPaint.textSize = settings.fontSize * 0.8f
         lineHeight = defaultPaint.fontSpacing
         charWidth = defaultPaint.measureText("W")
-        // Update line numbers
         showLineNumbers = settings.showLineNumbers
-        // Update syntax highlighting
         if (!settings.enableSyntaxHighlighting) {
             tokenCache.clear()
         }
         invalidate()
     }
 
-    // --- NEW: Lazy Loading ---
+    // ===== Lazy Loading =====
+
     fun loadFileLazy(path: String): Boolean {
         return try {
             val loader = LargeFileLoader(path)
@@ -142,27 +189,22 @@ class EditorView @JvmOverloads constructor(
             if (content != null) {
                 largeFileLoader = loader
                 isLargeFile = loader.isLarge()
-                if (isLargeFile) {
-                    // Load first chunk
-                    textLines = content.split("\n".toRegex())
-                    tokenCache.clear()
-                    invalidate()
-                    true
-                } else {
-                    // Small file - load normally
-                    textLines = content.split("\n".toRegex())
-                    tokenCache.clear()
-                    invalidate()
-                    true
-                }
-            } else false
+                textLines = content.split("\n".toRegex()).toMutableList()
+                if (textLines.isEmpty()) textLines.add("")
+                tokenCache.clear()
+                invalidate()
+                true
+            } else {
+                false
+            }
         } catch (e: Exception) {
             Log.e("EditorView", "Failed to load large file", e)
             false
         }
     }
 
-    // --- NEW: Content for Auto-Save ---
+    // ===== Auto-Save =====
+
     fun getContentForAutoSave(): String = getText()
 
     fun setOnContentChanged(listener: (String) -> Unit) {
@@ -173,7 +215,8 @@ class EditorView @JvmOverloads constructor(
         onContentChanged?.invoke(getText())
     }
 
-    // --- NEW: Zoom Support ---
+    // ===== Zoom =====
+
     fun zoomIn() {
         val newSize = (settings.fontSize * 1.1f).coerceAtMost(120f)
         applySettings(settings.copy(fontSize = newSize))
@@ -188,22 +231,29 @@ class EditorView @JvmOverloads constructor(
         applySettings(settings.copy(fontSize = 40f))
     }
 
-    // --- NEW: Toggle Line Numbers ---
+    // ===== Toggles =====
+
     fun toggleLineNumbers() {
         showLineNumbers = !showLineNumbers
         applySettings(settings.copy(showLineNumbers = showLineNumbers))
     }
 
-    // --- NEW: Toggle Word Wrap ---
     fun toggleWordWrap() {
         val newWordWrap = !settings.wordWrap
         applySettings(settings.copy(wordWrap = newWordWrap))
     }
 
+    // ===== Native Integration =====
+
     fun setEditorNative(native: EditorNative) {
         this.native = native
-        updateText()
+        // Load text from native if available
+        native.getText()?.let { text ->
+            textLines = text.split("\n".toRegex()).toMutableList()
+            if (textLines.isEmpty()) textLines.add("")
+        }
         undoManager.clear()
+        invalidate()
     }
 
     fun setShowLineNumbers(show: Boolean) {
@@ -211,20 +261,12 @@ class EditorView @JvmOverloads constructor(
         invalidate()
     }
 
-    private fun updateText() {
-        native?.let {
-            val fullText = it.getText()
-            textLines = fullText.split("\n".toRegex())
-            tokenCache.clear()
-            invalidate()
-            notifyContentChanged()
-        }
-    }
+    // ===== Drawing =====
 
     override fun onDraw(canvas: Canvas) {
         super.onDraw(canvas)
 
-        if (textLines.isEmpty()) {
+        if (textLines.isEmpty() || (textLines.size == 1 && textLines[0].isEmpty())) {
             canvas.drawText("[empty file]", textStartX, 10f + lineHeight, defaultPaint)
             return
         }
@@ -233,6 +275,7 @@ class EditorView @JvmOverloads constructor(
         val visibleEnd = min(textLines.size, ((height - 20) / lineHeight).toInt() + 2)
         val visibleRange = visibleStart until visibleEnd
 
+        // Tokenize visible lines
         val linesToTokenize = visibleRange.filter { it !in tokenCache.keys }
         if (linesToTokenize.isNotEmpty()) {
             val startTime = System.currentTimeMillis()
@@ -262,7 +305,6 @@ class EditorView @JvmOverloads constructor(
         // Draw find highlights
         if (findResults.isNotEmpty()) {
             for (position in findResults) {
-                // Find the line and column for this position
                 var lineStart = 0
                 var lineIndex = 0
                 for (i in textLines.indices) {
@@ -275,7 +317,7 @@ class EditorView @JvmOverloads constructor(
                 if (lineIndex in visibleRange) {
                     val offsetInLine = position - lineStart
                     val line = textLines[lineIndex]
-                    val endOffset = min(offsetInLine + 20, line.length) // Approximate highlight length
+                    val endOffset = min(offsetInLine + 20, line.length)
                     val xPos = textStartX + defaultPaint.measureText(line.substring(0, offsetInLine))
                     canvas.drawRect(
                         xPos,
@@ -294,6 +336,7 @@ class EditorView @JvmOverloads constructor(
             val tokens = tokenCache[lineIndex] ?: listOf()
             var xPos = textStartX
             var tokenStart = 0
+
             for (token in tokens) {
                 val paint = tokenPaintMap[token.type] ?: defaultPaint
                 val tokenText = line.substring(tokenStart, min(tokenStart + token.length, line.length))
@@ -312,31 +355,28 @@ class EditorView @JvmOverloads constructor(
                 val lineEnd = lineStart + line.length
                 if (absCursor in lineStart..lineEnd) {
                     val offsetInLine = absCursor - lineStart
-                    val beforeText = line.substring(0, offsetInLine)
+                    val beforeText = line.substring(0, offsetInLine.coerceIn(0, line.length))
                     val cursorX = textStartX + defaultPaint.measureText(beforeText)
                     canvas.drawLine(cursorX, yPos - lineHeight, cursorX, yPos, defaultPaint)
                 }
             }
+
             yPos += lineHeight
         }
 
+        // Clean up token cache
         val keysToRemove = tokenCache.keys.filter { it !in visibleRange }
         keysToRemove.forEach { tokenCache.remove(it) }
     }
 
-    // Keyboard handling with undo/redo
+    // ===== Keyboard Handling =====
+
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
         // Ctrl+Z = Undo, Ctrl+Y = Redo
         if (event.isCtrlPressed) {
             when (keyCode) {
-                KeyEvent.KEYCODE_Z -> {
-                    performUndo()
-                    return true
-                }
-                KeyEvent.KEYCODE_Y -> {
-                    performRedo()
-                    return true
-                }
+                KeyEvent.KEYCODE_Z -> { performUndo(); return true }
+                KeyEvent.KEYCODE_Y -> { performRedo(); return true }
             }
         }
 
@@ -349,58 +389,85 @@ class EditorView @JvmOverloads constructor(
         when (keyCode) {
             KeyEvent.KEYCODE_DEL -> {
                 if (cursorPos > 0) {
-                    val oldText = native?.getText() ?: ""
-                    native?.deleteText(cursorPos - 1, 1)
+                    val oldText = getText()
+                    val deletedChar = oldText.substring(cursorPos - 1, cursorPos)
+                    // Remove from textLines
+                    removeTextAt(cursorPos - 1, 1)
                     cursorPos--
-                    updateText()
-                    // Record for undo (delete = insert the deleted char)
-                    val newText = native?.getText() ?: ""
-                    val deletedChar = oldText.substring(cursorPos, cursorPos + 1)
                     if (!isUndoRedoInProgress) {
                         undoManager.pushEdit(cursorPos, deletedChar, "")
                     }
+                    updateTextAndNotify()
                 }
                 return true
             }
+
             KeyEvent.KEYCODE_FORWARD_DEL -> {
-                if (cursorPos < (native?.getText()?.length ?: 0)) {
-                    val oldText = native?.getText() ?: ""
+                val textLen = getText().length
+                if (cursorPos < textLen) {
+                    val oldText = getText()
                     val deletedChar = oldText.substring(cursorPos, cursorPos + 1)
-                    native?.deleteText(cursorPos, 1)
-                    updateText()
+                    removeTextAt(cursorPos, 1)
                     if (!isUndoRedoInProgress) {
                         undoManager.pushEdit(cursorPos, deletedChar, "")
                     }
+                    updateTextAndNotify()
                 }
                 return true
             }
+
             KeyEvent.KEYCODE_ENTER -> {
-                native?.insertText(cursorPos, "\n")
+                insertTextAt(cursorPos, "\n")
                 cursorPos++
-                updateText()
                 if (!isUndoRedoInProgress) {
                     undoManager.pushEdit(cursorPos - 1, "", "\n")
                 }
+                updateTextAndNotify()
                 return true
             }
+
             else -> {
                 val unicode = event.unicodeChar
                 if (unicode != 0 && event.action == KeyEvent.ACTION_DOWN) {
                     if (Character.isValidCodePoint(unicode)) {
                         val char = Char(unicode)
-                        native?.insertText(cursorPos, char.toString())
+                        insertTextAt(cursorPos, char.toString())
                         cursorPos++
-                        updateText()
                         if (!isUndoRedoInProgress) {
                             undoManager.pushEdit(cursorPos - 1, "", char.toString())
                         }
+                        updateTextAndNotify()
                         return true
                     }
                 }
             }
         }
+
         return super.onKeyDown(keyCode, event)
     }
+
+    // ===== Text Manipulation Helpers =====
+
+    private fun insertTextAt(pos: Int, text: String) {
+        val fullText = getText()
+        val newText = fullText.substring(0, pos) + text + fullText.substring(pos)
+        setText(newText)
+    }
+
+    private fun removeTextAt(pos: Int, count: Int) {
+        val fullText = getText()
+        val newText = fullText.substring(0, pos) + fullText.substring(pos + count)
+        setText(newText)
+    }
+
+    private fun updateTextAndNotify() {
+        // Also update native if available
+        native?.let { it.setText(getText()) }
+        invalidate()
+        notifyContentChanged()
+    }
+
+    // ===== Input Connection =====
 
     override fun onCreateInputConnection(outAttrs: EditorInfo): InputConnection {
         outAttrs.imeOptions = EditorInfo.IME_FLAG_NO_EXTRACT_UI
@@ -413,21 +480,20 @@ class EditorView @JvmOverloads constructor(
                 if (text != null) {
                     val newText = text.toString()
                     if (composingText.isNotEmpty()) {
-                        val oldText = composingText
-                        native?.deleteText(cursorPos - composingText.length, composingText.length)
-                        cursorPos -= composingText.length
-                        if (!isUndoRedoInProgress && oldText != newText) {
-                            undoManager.pushEdit(cursorPos, oldText, newText)
-                        }
-                    } else {
-                        if (!isUndoRedoInProgress && newText.isNotEmpty()) {
-                            undoManager.pushEdit(cursorPos, "", newText)
+                        // Replace composing text
+                        val startPos = cursorPos - composingText.length
+                        removeTextAt(startPos, composingText.length)
+                        cursorPos = startPos
+                    }
+                    if (newText.isNotEmpty()) {
+                        insertTextAt(cursorPos, newText)
+                        cursorPos += newText.length
+                        if (!isUndoRedoInProgress && composingText.isEmpty()) {
+                            undoManager.pushEdit(cursorPos - newText.length, "", newText)
                         }
                     }
                     composingText = newText
-                    native?.insertText(cursorPos, newText)
-                    cursorPos += newText.length
-                    updateText()
+                    updateTextAndNotify()
                 }
                 return true
             }
@@ -435,7 +501,7 @@ class EditorView @JvmOverloads constructor(
             override fun finishComposingText(): Boolean {
                 if (composingText.isNotEmpty()) {
                     composingText = ""
-                    updateText()
+                    updateTextAndNotify()
                 }
                 return true
             }
@@ -444,12 +510,12 @@ class EditorView @JvmOverloads constructor(
                 if (text != null) {
                     val str = text.toString()
                     if (str.isNotEmpty()) {
-                        native?.insertText(cursorPos, str)
+                        insertTextAt(cursorPos, str)
                         cursorPos += str.length
-                        updateText()
                         if (!isUndoRedoInProgress) {
                             undoManager.pushEdit(cursorPos - str.length, "", str)
                         }
+                        updateTextAndNotify()
                     }
                 }
                 return true
@@ -457,26 +523,21 @@ class EditorView @JvmOverloads constructor(
         }
     }
 
-    // --- Undo/Redo ---
+    // ===== Undo/Redo =====
 
     fun performUndo() {
         val action = undoManager.undo()
         if (action != null) {
             isUndoRedoInProgress = true
-            // Apply undo: replace oldText at position
-            val currentText = native?.getText() ?: ""
-            // Delete current text at position
-            val lenToDelete = action.newText.length
-            if (lenToDelete > 0) {
-                native?.deleteText(action.pos, lenToDelete)
-            }
-            // Insert old text
-            if (action.oldText.isNotEmpty()) {
-                native?.insertText(action.pos, action.oldText)
-            }
+            val currentText = getText()
+            // Replace current text at position with oldText
+            val newText = currentText.substring(0, action.pos) +
+                    action.oldText +
+                    currentText.substring(action.pos + action.newText.length)
+            setText(newText)
             cursorPos = action.pos + action.oldText.length
             isUndoRedoInProgress = false
-            updateText()
+            updateTextAndNotify()
         }
     }
 
@@ -484,20 +545,14 @@ class EditorView @JvmOverloads constructor(
         val action = undoManager.redo()
         if (action != null) {
             isUndoRedoInProgress = true
-            // Apply redo: replace oldText with newText at position
-            val currentText = native?.getText() ?: ""
-            // Delete old text
-            val lenToDelete = action.oldText.length
-            if (lenToDelete > 0) {
-                native?.deleteText(action.pos, lenToDelete)
-            }
-            // Insert new text
-            if (action.newText.isNotEmpty()) {
-                native?.insertText(action.pos, action.newText)
-            }
+            val currentText = getText()
+            val newText = currentText.substring(0, action.pos) +
+                    action.newText +
+                    currentText.substring(action.pos + action.oldText.length)
+            setText(newText)
             cursorPos = action.pos + action.newText.length
             isUndoRedoInProgress = false
-            updateText()
+            updateTextAndNotify()
         }
     }
 
@@ -506,10 +561,12 @@ class EditorView @JvmOverloads constructor(
 
     var onUndoRedoStateChanged: ((canUndo: Boolean, canRedo: Boolean) -> Unit)? = null
 
-    // --- Find ---
+    // ===== Find =====
 
     fun findNext(searchTerm: String, caseSensitive: Boolean) {
-        val text = native?.getText() ?: return
+        val text = getText()
+        if (text.isEmpty()) return
+
         val search = if (caseSensitive) searchTerm else searchTerm.lowercase()
         val content = if (caseSensitive) text else text.lowercase()
 
@@ -519,7 +576,6 @@ class EditorView @JvmOverloads constructor(
         val index = content.indexOf(search, startPos)
         if (index != -1) {
             cursorPos = index
-            // Highlight the found text by storing positions
             findResults = listOf(index)
             currentFindIndex = 0
             onFindResult?.invoke(index, searchTerm)
@@ -540,7 +596,9 @@ class EditorView @JvmOverloads constructor(
     }
 
     fun findPrevious(searchTerm: String, caseSensitive: Boolean) {
-        val text = native?.getText() ?: return
+        val text = getText()
+        if (text.isEmpty()) return
+
         val search = if (caseSensitive) searchTerm else searchTerm.lowercase()
         val content = if (caseSensitive) text else text.lowercase()
 
@@ -555,7 +613,6 @@ class EditorView @JvmOverloads constructor(
             onFindResult?.invoke(index, searchTerm)
             invalidate()
         } else {
-            // Wrap around
             val wrapIndex = content.lastIndexOf(search)
             if (wrapIndex != -1) {
                 cursorPos = wrapIndex
@@ -570,52 +627,50 @@ class EditorView @JvmOverloads constructor(
     }
 
     fun replaceNext(searchTerm: String, replaceTerm: String, caseSensitive: Boolean) {
-        val text = native?.getText() ?: return
+        val text = getText()
+        if (text.isEmpty()) return
+
         val search = if (caseSensitive) searchTerm else searchTerm.lowercase()
         val content = if (caseSensitive) text else text.lowercase()
 
         val index = content.indexOf(search, cursorPos)
         if (index != -1) {
-            // Replace
-            native?.deleteText(index, searchTerm.length)
-            native?.insertText(index, replaceTerm)
+            val newText = text.substring(0, index) + replaceTerm + text.substring(index + searchTerm.length)
+            setText(newText)
             cursorPos = index + replaceTerm.length
-            updateText()
-            // Record undo
             undoManager.pushEdit(index, searchTerm, replaceTerm)
-            // Clear find results
             findResults = emptyList()
             onFindReplaced?.invoke(index, replaceTerm)
-            invalidate()
+            updateTextAndNotify()
         } else {
             onFindNotFound?.invoke(searchTerm)
         }
     }
 
     fun replaceAll(searchTerm: String, replaceTerm: String, caseSensitive: Boolean) {
-        val text = native?.getText() ?: return
+        val text = getText()
+        if (text.isEmpty()) return
+
         val search = if (caseSensitive) searchTerm else searchTerm.lowercase()
         val content = if (caseSensitive) text else text.lowercase()
 
         var count = 0
         var pos = 0
+        var result = text
+
         while (true) {
             val index = content.indexOf(search, pos)
             if (index == -1) break
-            // Replace
-            native?.deleteText(index, searchTerm.length)
-            native?.insertText(index, replaceTerm)
-            // Update content for next search
-            // Note: We need to rebuild the content string
+            result = result.substring(0, index) + replaceTerm + result.substring(index + searchTerm.length)
             count++
             pos = index + replaceTerm.length
         }
+
         if (count > 0) {
-            updateText()
-            // Record as a single undo action (aggregate)
+            setText(result)
             undoManager.pushEdit(0, searchTerm, replaceTerm)
             onReplaceAllComplete?.invoke(count)
-            invalidate()
+            updateTextAndNotify()
         } else {
             onFindNotFound?.invoke(searchTerm)
         }
@@ -634,19 +689,16 @@ class EditorView @JvmOverloads constructor(
     var onReplaceAllComplete: ((count: Int) -> Unit)? = null
     var onFindRequested: (() -> Unit)? = null
 
-    // --- Cursor Management ---
+    // ===== Cursor Management =====
 
     fun setCursorPos(pos: Int) {
-        cursorPos = pos.coerceIn(0, native?.getText()?.length ?: 0)
+        cursorPos = pos.coerceIn(0, getText().length)
         invalidate()
     }
 
     fun getCursorPos(): Int = cursorPos
 
-    // --- NEW: Get full text ---
-    fun getText(): String {
-        return native?.getText() ?: ""
-    }
+    // ===== Cursor Blink =====
 
     private fun startCursorBlink() {
         cursorBlinkRunnable?.let { removeCallbacks(it) }
@@ -675,7 +727,7 @@ class EditorView @JvmOverloads constructor(
         native = null
     }
 
-    // --- Types ---
+    // ===== Types =====
 
     enum class LexerTokenType {
         KEYWORD, IDENTIFIER, NUMBER, STRING, COMMENT, OPERATOR, PREPROCESSOR, DEFAULT

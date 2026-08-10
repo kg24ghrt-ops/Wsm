@@ -59,6 +59,15 @@
                     </HorizontalScrollView>
 
                     <ImageButton
+                        android:id="@+id/btnReload"
+                        android:layout_width="@dimen/icon_button_size"
+                        android:layout_height="@dimen/icon_button_size"
+                        android:background="?attr/selectableItemBackgroundBorderless"
+                        android:src="@android:drawable/ic_menu_rotate"
+                        android:contentDescription="Reload"
+                        app:tint="?attr/colorOnSurface" />
+
+                    <ImageButton
                         android:id="@+id/btnNewTab"
                         android:layout_width="@dimen/icon_button_size"
                         android:layout_height="@dimen/icon_button_size"
