@@ -37,7 +37,7 @@ class MainActivity : AppCompatActivity() {
     private lateinit var btnFind: ImageButton
     private lateinit var btnNewTab: ImageButton
     private lateinit var btnSettings: ImageButton
-    private lateinit var btnFiles: ImageButton
+    private var btnFiles: ImageButton? = null
 
     private var fileObserver: FileObserver? = null
     private var currentFilePath: String? = null
@@ -142,7 +142,7 @@ class MainActivity : AppCompatActivity() {
         btnFind.setOnClickListener { showFindReplaceDialog() }
         btnNewTab.setOnClickListener { showNewFileDialog() }
         btnSettings.setOnClickListener { showSettingsDialog() }
-        btnFiles.setOnClickListener { toggleFileExplorer() }
+        btnFiles?.setOnClickListener { toggleFileExplorer() }
 
         val workingDir = filesDir.resolve("home").absolutePath
         GitManager.gitStatus(this, workingDir)
