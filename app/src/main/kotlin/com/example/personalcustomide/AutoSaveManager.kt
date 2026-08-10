@@ -33,17 +33,18 @@ object AutoSaveManager {
         isRunning = true
 
         handler = Handler(Looper.getMainLooper())
-        runnable = Runnable {
+        // FIX: Create runnable as non-null and use it safely
+        val newRunnable = Runnable {
             if (isRunning && autoSaveEnabled) {
                 saveDraft(context, filePath, content)
-                // Also save to actual file if auto-save is enabled
                 if (autoSaveEnabled) {
                     saveToFile(filePath, content)
                 }
-                handler?.postDelayed(runnable, autoSaveInterval)
+                handler?.postDelayed(this, autoSaveInterval)
             }
         }
-        handler?.postDelayed(runnable, autoSaveInterval)
+        runnable = newRunnable
+        handler?.postDelayed(newRunnable, autoSaveInterval)
     }
 
     fun updateContent(content: String) {

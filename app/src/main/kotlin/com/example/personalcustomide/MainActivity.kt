@@ -42,9 +42,6 @@ class MainActivity : AppCompatActivity() {
     // Keyboard shortcuts
     private lateinit var keyboardHandler: KeyboardShortcutHandler
 
-    // Auto-save
-    private val autoSaveManager = AutoSaveManager
-
     companion object {
         private const val PERMISSION_REQUEST_CODE = 100
         private const val TERMUX_PERMISSION_REQUEST_CODE = 101
@@ -105,7 +102,6 @@ class MainActivity : AppCompatActivity() {
         binding.editorView.setOnContentChanged { content ->
             isContentModified = true
             AutoSaveManager.updateContent(content)
-            // Mark tab as modified
             EditorTabManager.activeTab?.let { tab ->
                 EditorTabManager.markActiveModified(true)
                 updateTabUI()
@@ -191,38 +187,35 @@ class MainActivity : AppCompatActivity() {
     // --- Keyboard Shortcuts ---
 
     private fun setupKeyboardShortcuts() {
-        keyboardHandler = KeyboardShortcutHandler(binding.editorView).apply {
-            callback = object : KeyboardShortcutHandler.Callback {
-                override fun onSave() { saveCurrentFile() }
-                override fun onFind() { showFindReplaceDialog() }
-                override fun onFindNext() {
-                    // Reuse last search term
-                    binding.editorView.findNext(lastSearchTerm, lastCaseSensitive)
-                }
-                override fun onFindPrevious() {
-                    binding.editorView.findPrevious(lastSearchTerm, lastCaseSensitive)
-                }
-                override fun onReplace() { showFindReplaceDialog() }
-                override fun onUndo() { binding.editorView.performUndo() }
-                override fun onRedo() { binding.editorView.performRedo() }
-                override fun onSelectAll() { /* Implement select all */ }
-                override fun onCopy() { /* Implement copy */ }
-                override fun onCut() { /* Implement cut */ }
-                override fun onPaste() { /* Implement paste */ }
-                override fun onNewFile() { showNewFileDialog() }
-                override fun onOpenFile() { /* Open file picker */ }
-                override fun onCloseFile() { closeCurrentTab() }
-                override fun onToggleLineNumbers() { binding.editorView.toggleLineNumbers() }
-                override fun onToggleWordWrap() { binding.editorView.toggleWordWrap() }
-                override fun onZoomIn() { binding.editorView.zoomIn() }
-                override fun onZoomOut() { binding.editorView.zoomOut() }
-                override fun onZoomReset() { binding.editorView.zoomReset() }
+        keyboardHandler = KeyboardShortcutHandler(binding.editorView)
+        keyboardHandler.callback = object : KeyboardShortcutHandler.Callback {
+            override fun onSave() { saveCurrentFile() }
+            override fun onFind() { showFindReplaceDialog() }
+            override fun onFindNext() {
+                binding.editorView.findNext(lastSearchTerm, lastCaseSensitive)
             }
+            override fun onFindPrevious() {
+                binding.editorView.findPrevious(lastSearchTerm, lastCaseSensitive)
+            }
+            override fun onReplace() { showFindReplaceDialog() }
+            override fun onUndo() { binding.editorView.performUndo() }
+            override fun onRedo() { binding.editorView.performRedo() }
+            override fun onSelectAll() { /* Implement select all */ }
+            override fun onCopy() { /* Implement copy */ }
+            override fun onCut() { /* Implement cut */ }
+            override fun onPaste() { /* Implement paste */ }
+            override fun onNewFile() { showNewFileDialog() }
+            override fun onOpenFile() { /* Open file picker */ }
+            override fun onCloseFile() { closeCurrentTab() }
+            override fun onToggleLineNumbers() { binding.editorView.toggleLineNumbers() }
+            override fun onToggleWordWrap() { binding.editorView.toggleWordWrap() }
+            override fun onZoomIn() { binding.editorView.zoomIn() }
+            override fun onZoomOut() { binding.editorView.zoomOut() }
+            override fun onZoomReset() { binding.editorView.zoomReset() }
         }
     }
 
     override fun onKeyDown(keyCode: Int, event: KeyEvent): Boolean {
-        // Let keyboard handler process first
         if (::keyboardHandler.isInitialized &&
             keyboardHandler.handleKeyEvent(binding.editorView, keyCode, event)) {
             return true
@@ -231,6 +224,9 @@ class MainActivity : AppCompatActivity() {
     }
 
     // --- Auto-Save ---
+
+    private var lastSearchTerm = ""
+    private var lastCaseSensitive = false
 
     private fun startAutoSave() {
         val filePath = currentFilePath ?: return
@@ -256,10 +252,7 @@ class MainActivity : AppCompatActivity() {
                 .setPositiveButton("Load Draft") { _, _ ->
                     val draft = AutoSaveManager.getDraft(this, filePath)
                     draft?.let {
-                        // Load draft content into editor
-                        // For now, we just show a toast
                         Toast.makeText(this, "Draft loaded", Toast.LENGTH_SHORT).show()
-                        // In a full implementation, you'd set the editor content here
                     }
                 }
                 .setNegativeButton("Discard") { _, _ ->
@@ -273,15 +266,19 @@ class MainActivity : AppCompatActivity() {
     // --- Settings ---
 
     private fun showSettingsDialog() {
-        SettingsDialog(this).show(currentSettings) { newSettings ->
-            currentSettings = newSettings
-            EditorSettings.save(this, newSettings)
-            binding.editorView.applySettings(newSettings)
-            // Update auto-save settings
-            AutoSaveManager.setAutoSaveEnabled(newSettings.autoSave)
-            AutoSaveManager.setAutoSaveInterval(newSettings.autoSaveInterval)
-            Toast.makeText(this, "Settings applied", Toast.LENGTH_SHORT).show()
-        }
+        // FIX: Use proper callback object
+        val dialog = SettingsDialog(this)
+        dialog.show(currentSettings, object : SettingsDialog.Callback {
+            override fun onSettingsChanged(settings: EditorSettings) {
+                currentSettings = settings
+                EditorSettings.save(this@MainActivity, settings)
+                binding.editorView.applySettings(settings)
+                // Update auto-save settings
+                AutoSaveManager.setAutoSaveEnabled(settings.autoSave)
+                AutoSaveManager.setAutoSaveInterval(settings.autoSaveInterval)
+                Toast.makeText(this@MainActivity, "Settings applied", Toast.LENGTH_SHORT).show()
+            }
+        })
     }
 
     // --- File Operations ---
@@ -295,7 +292,6 @@ class MainActivity : AppCompatActivity() {
                 EditorTabManager.markActiveModified(false)
                 updateTabUI()
                 Toast.makeText(this, "Saved", Toast.LENGTH_SHORT).show()
-                // Delete draft after successful save
                 AutoSaveManager.deleteDraft(this, filePath)
             }
         }
@@ -309,14 +305,17 @@ class MainActivity : AppCompatActivity() {
                 .setPositiveButton("Save") { _, _ ->
                     saveCurrentFile()
                     EditorTabManager.closeActiveTab()
+                    updateTabUI()
                 }
                 .setNegativeButton("Discard") { _, _ ->
                     EditorTabManager.closeActiveTab()
+                    updateTabUI()
                 }
                 .setNeutralButton("Cancel", null)
                 .show()
         } else {
             EditorTabManager.closeActiveTab()
+            updateTabUI()
         }
     }
 
@@ -339,7 +338,6 @@ class MainActivity : AppCompatActivity() {
                 titleView.setTextColor(0xFF333333.toInt())
             }
 
-            // Highlight active tab
             if (index == EditorTabManager.activeTabIndex) {
                 tabView.setBackgroundColor(0xFFE3F2FD.toInt())
             } else {
@@ -357,7 +355,6 @@ class MainActivity : AppCompatActivity() {
             tabContainer.addView(tabView)
         }
 
-        // Show/hide tab container based on tab count
         binding.tabContainer.visibility = if (EditorTabManager.tabCount > 0) View.VISIBLE else View.GONE
     }
 
@@ -392,9 +389,6 @@ class MainActivity : AppCompatActivity() {
     }
 
     // --- Find/Replace ---
-
-    private var lastSearchTerm = ""
-    private var lastCaseSensitive = false
 
     private fun showFindReplaceDialog() {
         if (findReplaceDialog == null) {
@@ -431,8 +425,8 @@ class MainActivity : AppCompatActivity() {
     // --- File Loading ---
 
     private suspend fun loadFileAsync(path: String) = withContext(Dispatchers.IO) {
-        // Use lazy loading for large files
-        val success = if (LargeFileLoader().isLargeFile(path)) {
+        val loader = LargeFileLoader(path)
+        val success = if (loader.isLargeFile(path)) {
             binding.editorView.loadFileLazy(path)
         } else {
             EditorNative.loadFile(path)
@@ -440,12 +434,10 @@ class MainActivity : AppCompatActivity() {
         withContext(Dispatchers.Main) {
             if (success) {
                 currentFilePath = path
-                // Add to tab manager
                 EditorTabManager.openFile(path)
                 binding.editorView.invalidate()
                 setupFileObserver(path)
                 updateTabUI()
-                // Restart auto-save for new file
                 startAutoSave()
             } else {
                 Toast.makeText(this@MainActivity, "Failed to load file", Toast.LENGTH_SHORT).show()
@@ -621,7 +613,6 @@ class MainActivity : AppCompatActivity() {
 
     override fun onPause() {
         super.onPause()
-        // Auto-save on pause
         val content = binding.editorView.getContentForAutoSave()
         val filePath = EditorTabManager.getActiveFilePath()
         if (filePath != null && content.isNotEmpty()) {
